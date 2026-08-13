@@ -1,0 +1,138 @@
+// prisma/schema.prisma
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("AURORA_DATABASE_URL")
+}
+
+// ==================== CATÁLOGOS ====================
+
+model DocumentType {
+  id        String   @id @default(uuid())
+  code      String   @unique @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  people Person[]
+
+  @@map("document_types")
+}
+
+model Ubigeo {
+  id        String   @id @default(uuid())
+  code      String   @unique @db.VarChar(20)
+  name      String   @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  people Person[]
+
+  @@map("ubigeos")
+}
+
+model Store {
+  id             String            @id @default(uuid())
+  legacyStoreId  Int               @unique @map("legacy_store_id")
+  name           String            @db.VarChar(200)
+  description    String?           @db.Text
+  isActive       Boolean           @default(true) @map("is_active")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  
+  memberships    StoreMembership[]
+
+  @@map("stores")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(200)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  memberships StoreMembership[]
+
+  @@map("roles")
+}
+
+// ==================== ENTIDADES PRINCIPALES ====================
+
+model Person {
+  id             String        @id @default(uuid())
+  legacyPersonId Int?          @unique @map("legacy_person_id")
+  firstName      String        @map("first_name") @db.VarChar(100)
+  lastName       String        @map("last_name") @db.VarChar(100)
+  documentNumber String        @unique @map("document_number") @db.VarChar(20)
+  documentTypeId String        @map("document_type_id")
+  ubigeoId       String?       @map("ubigeo_id")
+  address        String?       @db.Text
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  
+  documentType   DocumentType  @relation(fields: [documentTypeId], references: [id])
+  ubigeo         Ubigeo?       @relation(fields: [ubigeoId], references: [id])
+  users          User[]
+
+  @@index([documentNumber])
+  @@index([legacyPersonId])
+  @@map("people")
+}
+
+model User {
+  id            String            @id @default(uuid())
+  personId      String            @map("person_id")
+  email         String            @unique @db.VarChar(255)
+  passwordHash  String            @map("password_hash") @db.VarChar(255)
+  cognitoSub    String            @unique @map("cognito_sub") @db.VarChar(255)
+  isActive      Boolean           @default(true) @map("is_active")
+  lastLoginAt   DateTime?         @map("last_login_at")
+  phone         String?           @db.VarChar(20)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  
+  person        Person            @relation(fields: [personId], references: [id])
+  memberships   StoreMembership[]
+
+  @@index([email])
+  @@index([cognitoSub])
+  @@map("users")
+}
+
+model StoreMembership {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  storeId   String   @map("store_id")
+  roleId    String   @map("role_id")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  user  User  @relation(fields: [userId], references: [id])
+  store Store @relation(fields: [storeId], references: [id])
+  role  Role  @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, storeId])
+  @@index([userId])
+  @@index([storeId])
+  @@map("store_memberships")
+}
+
+// ==================== IDEMPOTENCIA ====================
+
+model Idempotency {
+  id          BigInt   @id @default(autoincrement())
+  key         String   @unique @db.VarChar(255)
+  status      String   @default("PROCESSED") @db.VarChar(30)
+  processedAt DateTime @default(now()) @map("processed_at")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@map("idempotency")
+}

@@ -1,0 +1,23 @@
+{
+  "eventId": "evt-update-20260814-002",
+  "eventType": "UPDATE_USER",
+  "timestamp": "2026-08-14T11:15:00.000Z",
+  "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "person": {
+    "firstName": "Juan Carlos",
+    "lastName": "Pérez Rodríguez Actualizado",
+    "documentNumber": "70123456",
+    "address": "Calle Las Flores 456, Miraflores, Lima"
+  },
+  "user": {
+    "email": "juan.perez@example.com",
+    "cognitoSub": "sub-uuid-juan-perez-001",
+    "isActive": true
+  },
+  "membership": {
+    "storeLegacyId": 65921,
+    "role": "SELLER",
+    "isOwnerStore": false,
+    "isActive": true
+  }
+}

@@ -1,0 +1,1130 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+prisma/
+  schema.prisma
+src/
+  handlers/
+    processSqsMigration.ts
+  services/
+    aurora.service.ts
+    idempotency.service.ts
+  types/
+    sqs-migration.types.ts
+  use-cases/
+    sqs-migration.use-case.ts
+  utils/
+    catalog.ts
+    logger.ts
+test/
+  test-create-user-minimal.json
+  test-create-user.json
+  test-update-user.json
+.env.example
+libquery_engine-rhel-openssl-3.0.x.so.node
+package.json
+pnpm-workspace.yaml
+serverless.yml
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="prisma/schema.prisma">
+// prisma/schema.prisma
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("AURORA_DATABASE_URL")
+}
+
+// ==================== CATÁLOGOS ====================
+
+model DocumentType {
+  id        String   @id @default(uuid())
+  code      String   @unique @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  people Person[]
+
+  @@map("document_types")
+}
+
+model Ubigeo {
+  id        String   @id @default(uuid())
+  code      String   @unique @db.VarChar(20)
+  name      String   @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  people Person[]
+
+  @@map("ubigeos")
+}
+
+model Store {
+  id             String            @id @default(uuid())
+  legacyStoreId  Int               @unique @map("legacy_store_id")
+  name           String            @db.VarChar(200)
+  description    String?           @db.Text
+  isActive       Boolean           @default(true) @map("is_active")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  
+  memberships    StoreMembership[]
+
+  @@map("stores")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique @db.VarChar(50)
+  description String?  @db.VarChar(200)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  memberships StoreMembership[]
+
+  @@map("roles")
+}
+
+// ==================== ENTIDADES PRINCIPALES ====================
+
+model Person {
+  id             String        @id @default(uuid())
+  legacyPersonId Int?          @unique @map("legacy_person_id")
+  firstName      String        @map("first_name") @db.VarChar(100)
+  lastName       String        @map("last_name") @db.VarChar(100)
+  documentNumber String        @unique @map("document_number") @db.VarChar(20)
+  documentTypeId String        @map("document_type_id")
+  ubigeoId       String?       @map("ubigeo_id")
+  address        String?       @db.Text
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  
+  documentType   DocumentType  @relation(fields: [documentTypeId], references: [id])
+  ubigeo         Ubigeo?       @relation(fields: [ubigeoId], references: [id])
+  users          User[]
+
+  @@index([documentNumber])
+  @@index([legacyPersonId])
+  @@map("people")
+}
+
+model User {
+  id            String            @id @default(uuid())
+  personId      String            @map("person_id")
+  email         String            @unique @db.VarChar(255)
+  passwordHash  String            @map("password_hash") @db.VarChar(255)
+  cognitoSub    String            @unique @map("cognito_sub") @db.VarChar(255)
+  isActive      Boolean           @default(true) @map("is_active")
+  lastLoginAt   DateTime?         @map("last_login_at")
+  phone         String?           @db.VarChar(20)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  
+  person        Person            @relation(fields: [personId], references: [id])
+  memberships   StoreMembership[]
+
+  @@index([email])
+  @@index([cognitoSub])
+  @@map("users")
+}
+
+model StoreMembership {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  storeId   String   @map("store_id")
+  roleId    String   @map("role_id")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  user  User  @relation(fields: [userId], references: [id])
+  store Store @relation(fields: [storeId], references: [id])
+  role  Role  @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, storeId])
+  @@index([userId])
+  @@index([storeId])
+  @@map("store_memberships")
+}
+
+// ==================== IDEMPOTENCIA ====================
+
+model Idempotency {
+  id          BigInt   @id @default(autoincrement())
+  key         String   @unique @db.VarChar(255)
+  status      String   @default("PROCESSED") @db.VarChar(30)
+  processedAt DateTime @default(now()) @map("processed_at")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@map("idempotency")
+}
+</file>
+
+<file path="src/handlers/processSqsMigration.ts">
+// src/handlers/processSqsMigration.ts
+import { SQSEvent, Context } from 'aws-lambda';
+import { executeSqsMigration } from '../use-cases/sqs-migration.use-case';
+import { logger } from '../utils/logger';
+import { getCatalogCache } from '../utils/catalog';
+
+export const handler = async (event: SQSEvent, context: Context) => {
+  logger.info('📦 Procesando mensajes SQS', {
+    recordCount: event.Records.length,
+    requestId: context.awsRequestId,
+  });
+
+  // Warmup: cargar catálogos en memoria
+  await getCatalogCache();
+
+  const batchItemFailures: { itemIdentifier: string }[] = [];
+
+  for (const record of event.Records) {
+    try {
+      const message = JSON.parse(record.body);
+      
+      // Validar estructura básica del mensaje
+      if (!message.eventId || !message.eventType) {
+        throw new Error('Mensaje inválido: faltan campos obligatorios');
+      }
+
+      await executeSqsMigration(message);
+      
+      logger.info('✅ Mensaje procesado exitosamente', {
+        eventId: message.eventId,
+        eventType: message.eventType,
+        messageId: record.messageId,
+      });
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      
+      logger.error('❌ Error procesando mensaje', {
+        messageId: record.messageId,
+        error: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
+        body: record.body,
+      });
+
+      // Marcar este mensaje como fallido para que SQS lo reintente o envíe a DLQ
+      batchItemFailures.push({
+        itemIdentifier: record.messageId,
+      });
+    }
+  }
+
+  // Si hay fallos, SQS reintentará los mensajes fallidos según la política
+  return {
+    batchItemFailures,
+  };
+};
+</file>
+
+<file path="src/services/aurora.service.ts">
+import { PrismaClient } from '@prisma/client';
+
+let prisma: PrismaClient | null = null;
+
+export function getAuroraDb(): PrismaClient {
+  if (!prisma) {
+    const connectionString = process.env.AURORA_DATABASE_URL || process.env.DATABASE_URL;
+
+    if (!connectionString) {
+      throw new Error('AURORA_DATABASE_URL environment variable is not defined.');
+    }
+
+    prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: connectionString,
+        },
+      },
+    });
+  }
+
+  return prisma;
+}
+</file>
+
+<file path="src/services/idempotency.service.ts">
+import { getAuroraDb } from './aurora.service';
+
+/**
+ * Adquiere un lock idempotente en Aurora.
+ * @returns true si se adquirió (primera vez), false si ya existe (duplicado).
+ */
+export async function acquireSqsMigrationLock(eventId: string): Promise<boolean> {
+  const db = getAuroraDb();
+  const lockKey = `sqs_migration:${eventId}`;
+
+  try {
+    await db.idempotency.create({
+      data: {
+        key: lockKey,
+        status: 'LOCKED',
+      },
+    });
+    return true;
+  } catch (error: any) {
+    // P2002 es el código de Prisma para "Unique constraint violation"
+    if (error?.code === 'P2002') {
+      return false; 
+    }
+    throw error;
+  }
+}
+
+/**
+ * Libera el lock y marca el estado final.
+ */
+export async function releaseSqsMigrationLock(
+  eventId: string, 
+  status: 'PROCESSED' | 'FAILED' = 'PROCESSED'
+): Promise<void> {
+  const db = getAuroraDb();
+  const lockKey = `sqs_migration:${eventId}`;
+
+  await db.idempotency.update({
+    where: { key: lockKey },
+    data: {
+      status,
+      processedAt: new Date(),
+    },
+  });
+}
+</file>
+
+<file path="src/types/sqs-migration.types.ts">
+export type MigrationEventType =
+  | 'CREATE_USER'
+  | 'UPDATE_USER';
+
+export interface UserMigrationMessage {
+  eventId: string;
+  eventType: MigrationEventType;
+  timestamp: string;
+  sourceSystem: 'ALICLIK_LEGACY_HEROKU';
+  person: {
+    legacyPersonId?: number;
+    firstName: string;
+    lastName: string;
+    documentType?: 'DNI' | 'RUC' | 'CE' | 'PASSPORT';
+    documentNumber: string;
+    ubigeoCode?: string;
+    address?: string;
+  };
+  user: {
+    legacyUserId?: number;
+    email: string;
+    cognitoSub: string;
+    isActive: boolean;
+    lastLoginAt?: string;
+    phone?: string;
+  };
+  membership?: {
+    storeLegacyId: number;
+    role: 'ADMIN_STORE' | 'SELLER' | 'MOTORIZED' | 'LIQUIDATOR' | 'MASTER' | 'SUPER_MASTER';
+    isOwnerStore?: boolean;
+    warehouseLegacyId?: number;
+    isActive?: boolean;
+  };
+  settings?: {
+    companyPrefix: string;
+    spreadsheetOrder?: Record<string, any>;
+  };
+}
+</file>
+
+<file path="src/use-cases/sqs-migration.use-case.ts">
+// src/use-cases/sqs-migration.use-case.ts
+import { getAuroraDb } from '../services/aurora.service';
+import { acquireSqsMigrationLock, releaseSqsMigrationLock } from '../services/idempotency.service';
+import { getCatalogCache } from '../utils/catalog';
+import { logger } from '../utils/logger';
+import { v4 as uuidv4 } from 'uuid';
+import { UserMigrationMessage } from '../types/sqs-migration.types';
+
+export async function executeSqsMigration(message: UserMigrationMessage) {
+  const { eventId, eventType } = message;
+
+  logger.debug('Ejecutando migración', { eventId, eventType });
+
+  // 1. Idempotencia
+  const lock = await acquireSqsMigrationLock(eventId);
+  if (!lock) {
+    logger.info(`Evento ${eventId} ya fue procesado, ignorando`);
+    return { eventId, status: 'ALREADY_PROCESSED' };
+  }
+
+  try {
+    const auroraDb = getAuroraDb();
+    const cache = await getCatalogCache();
+
+    if (!cache || Object.keys(cache).length === 0) {
+      throw new Error('Catálogos no disponibles');
+    }
+
+    let result;
+    switch (eventType) {
+      case 'CREATE_USER':
+        result = await handleCreateUser(auroraDb, message, cache);
+        break;
+      case 'UPDATE_USER':
+        result = await handleUpdateUser(auroraDb, message, cache);
+        break;
+      default:
+        throw new Error(`Tipo de evento no soportado: ${eventType}`);
+    }
+
+    await releaseSqsMigrationLock(eventId, 'PROCESSED');
+    
+    logger.info(`✅ Evento ${eventId} procesado exitosamente`, {
+      eventType,
+      result,
+    });
+    
+    return { eventId, status: 'SUCCESS', eventType };
+    
+  } catch (error) {
+    await releaseSqsMigrationLock(eventId, 'FAILED');
+    
+    logger.error(`❌ Error procesando evento ${eventId}`, {
+      error: error instanceof Error ? error.message : 'Error desconocido',
+      eventType,
+    });
+    
+    throw error;
+  }
+}
+
+async function handleCreateUser(auroraDb: any, message: UserMigrationMessage, cache: any) {
+  const { person, user, membership } = message;
+
+  logger.debug('Creando usuario', { 
+    documentNumber: person.documentNumber,
+    email: user.email,
+    cognitoSub: user.cognitoSub,
+  });
+
+  // Validaciones
+  if (!person.firstName || !person.lastName || !person.documentNumber) {
+    throw new Error('Campos obligatorios faltantes en persona');
+  }
+
+  if (!user.email || !user.cognitoSub) {
+    throw new Error('Campos obligatorios faltantes en usuario');
+  }
+
+  // Validar duplicados en Person
+  const existingPerson = await auroraDb.person.findFirst({
+    where: {
+      OR: [
+        { documentNumber: person.documentNumber },
+        { legacyPersonId: person.legacyPersonId || undefined },
+      ].filter(Boolean),
+    },
+  });
+
+  if (existingPerson) {
+    throw new Error(`Persona con documento ${person.documentNumber} ya existe`);
+  }
+
+  // Validar duplicados en User
+  const existingUser = await auroraDb.user.findFirst({
+    where: {
+      OR: [
+        { email: user.email },
+        { cognitoSub: user.cognitoSub },
+      ],
+    },
+  });
+
+  if (existingUser) {
+    throw new Error(`Usuario con email ${user.email} o cognitoSub ${user.cognitoSub} ya existe`);
+  }
+
+  // Validar catálogos
+  const docTypeKey = person.documentType || 'DNI';
+  const documentTypeId = cache.docTypes[docTypeKey];
+  if (!documentTypeId) {
+    throw new Error(`Tipo de documento ${docTypeKey} no encontrado en catálogo`);
+  }
+
+  let result;
+
+  await auroraDb.$transaction(async (tx: any) => {
+    // 1. Crear Person
+    const personId = uuidv4();
+    await tx.person.create({
+      data: {
+        id: personId,
+        legacyPersonId: person.legacyPersonId || null,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        documentNumber: person.documentNumber,
+        documentTypeId: documentTypeId,
+        ubigeoId: person.ubigeoCode ? cache.ubigeos[person.ubigeoCode] || null : null,
+        address: person.address || null,
+      },
+    });
+
+    // 2. Crear User
+    const userId = uuidv4();
+    await tx.user.create({
+      data: {
+        id: userId,
+        personId: personId,
+        email: user.email,
+        passwordHash: '',
+        cognitoSub: user.cognitoSub,
+        isActive: user.isActive !== false,
+        lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt) : null,
+        phone: user.phone || null,
+      },
+    });
+
+    // 3. Crear o Resolver Store y Membership
+    if (membership) {
+      let storeId = cache.stores[String(membership.storeLegacyId)];
+
+      // Si la tienda no existe en el catálogo, buscar/crear en la BD
+      if (!storeId) {
+        const existingStore = await tx.store.findFirst({
+          where: { legacyStoreId: membership.storeLegacyId },
+        });
+
+        if (existingStore) {
+          storeId = existingStore.id;
+        } else {
+          storeId = uuidv4();
+          await tx.store.create({
+            data: {
+              id: storeId,
+              legacyStoreId: membership.storeLegacyId,
+              name: `Tienda ${membership.storeLegacyId}`,
+              isActive: true,
+            },
+          });
+        }
+        cache.stores[String(membership.storeLegacyId)] = storeId;
+      }
+
+      const roleId = cache.roles[membership.role];
+      if (!roleId) {
+        throw new Error(`Rol ${membership.role} no encontrado en Aurora`);
+      }
+
+      await tx.storeMembership.create({
+        data: {
+          id: uuidv4(),
+          userId: userId,
+          storeId: storeId,
+          roleId: roleId,
+          isActive: membership.isActive !== false,
+        },
+      });
+    }
+
+    result = { 
+      personId, 
+      userId, 
+      action: 'CREATE_USER',
+      membershipCreated: !!membership,
+    };
+  });
+
+  return result;
+}
+
+async function handleUpdateUser(auroraDb: any, message: UserMigrationMessage, cache: any) {
+  const { person, user, membership } = message;
+
+  logger.debug('Actualizando usuario', {
+    email: user.email,
+    cognitoSub: user.cognitoSub,
+  });
+
+  if (!user.email && !user.cognitoSub) {
+    throw new Error('Se requiere email o cognitoSub para actualizar usuario');
+  }
+
+  let result;
+
+  await auroraDb.$transaction(async (tx: any) => {
+    // 1. Buscar User existente
+    const existingUser = await tx.user.findFirst({
+      where: {
+        OR: [
+          { email: user.email },
+          { cognitoSub: user.cognitoSub },
+        ].filter(Boolean),
+      },
+      include: {
+        person: true,
+        memberships: true,
+      },
+    });
+
+    if (!existingUser) {
+      throw new Error(`Usuario no encontrado: ${user.email || user.cognitoSub}`);
+    }
+
+    // 2. Actualizar Person
+    if (existingUser.person && person) {
+      const personUpdateData: any = {};
+      if (person.firstName) personUpdateData.firstName = person.firstName;
+      if (person.lastName) personUpdateData.lastName = person.lastName;
+      if (person.documentNumber) personUpdateData.documentNumber = person.documentNumber;
+      if (person.address !== undefined) personUpdateData.address = person.address;
+      if (person.documentType && cache.docTypes[person.documentType]) {
+        personUpdateData.documentTypeId = cache.docTypes[person.documentType];
+      }
+      if (person.ubigeoCode && cache.ubigeos[person.ubigeoCode]) {
+        personUpdateData.ubigeoId = cache.ubigeos[person.ubigeoCode];
+      }
+
+      if (Object.keys(personUpdateData).length > 0) {
+        await tx.person.update({
+          where: { id: existingUser.personId },
+          data: personUpdateData,
+        });
+      }
+    }
+
+    // 3. Actualizar User
+    const userUpdateData: any = {};
+    if (user.isActive !== undefined) userUpdateData.isActive = user.isActive;
+    if (user.phone) userUpdateData.phone = user.phone;
+    if (user.email) userUpdateData.email = user.email;
+
+    if (Object.keys(userUpdateData).length > 0) {
+      await tx.user.update({
+        where: { id: existingUser.id },
+        data: userUpdateData,
+      });
+    }
+
+    // 4. Actualizar o Crear StoreMembership (Upsert)
+    if (membership) {
+      let storeId = cache.stores[String(membership.storeLegacyId)];
+
+      if (!storeId) {
+        const existingStore = await tx.store.findFirst({
+          where: { legacyStoreId: membership.storeLegacyId },
+        });
+
+        if (existingStore) {
+          storeId = existingStore.id;
+        } else {
+          storeId = uuidv4();
+          await tx.store.create({
+            data: {
+              id: storeId,
+              legacyStoreId: membership.storeLegacyId,
+              name: `Tienda ${membership.storeLegacyId}`,
+              isActive: true,
+            },
+          });
+        }
+        cache.stores[String(membership.storeLegacyId)] = storeId;
+      }
+
+      const roleId = cache.roles[membership.role];
+      if (!roleId) {
+        throw new Error(`Rol ${membership.role} no encontrado en Aurora`);
+      }
+
+      const existingMembership = existingUser.memberships?.find(
+        (m: any) => m.storeId === storeId
+      );
+
+      if (existingMembership) {
+        const membershipUpdateData: any = {};
+        if (membership.role) membershipUpdateData.roleId = roleId;
+        if (membership.isActive !== undefined) {
+          membershipUpdateData.isActive = membership.isActive;
+        }
+
+        if (Object.keys(membershipUpdateData).length > 0) {
+          await tx.storeMembership.update({
+            where: { id: existingMembership.id },
+            data: membershipUpdateData,
+          });
+        }
+      } else {
+        await tx.storeMembership.create({
+          data: {
+            id: uuidv4(),
+            userId: existingUser.id,
+            storeId: storeId,
+            roleId: roleId,
+            isActive: membership.isActive !== false,
+          },
+        });
+      }
+    }
+
+    result = {
+      userId: existingUser.id,
+      action: 'UPDATE_USER',
+      updated: true,
+    };
+  });
+
+  return result;
+}
+</file>
+
+<file path="src/utils/catalog.ts">
+import { getAuroraDb } from '../services/aurora.service';
+
+interface CatalogCache {
+  docTypes: Record<string, string>;      // { 'DNI': 'uuid-123', 'RUC': 'uuid-456' }
+  ubigeos: Record<string, string>;       // { '150101': 'uuid-789' }
+  stores: Record<string, string>;        // { '65921': 'uuid-abc' }
+  roles: Record<string, string>;         // { 'ADMIN_STORE': 'uuid-def' }
+}
+
+let CATALOG_CACHE: CatalogCache | null = null;
+
+/**
+ * Carga y cachea los catálogos desde Aurora.
+ * Se ejecuta una sola vez (singleton) para no saturar la BD.
+ */
+export async function getCatalogCache(): Promise<CatalogCache> {
+  if (CATALOG_CACHE) {
+    return CATALOG_CACHE;
+  }
+
+  console.log('📚 Cargando catálogos desde Aurora...');
+  
+  const db = getAuroraDb();
+
+  try {
+    // Ejecutamos todas las consultas en paralelo
+    const [docTypes, ubigeos, stores, roles] = await Promise.all([
+      // 1. Tipos de documento
+      db.$queryRaw<Array<{ id: string; code: string }>>`
+        SELECT id, code FROM document_types
+      `,
+      
+      // 2. Ubigeos (departamentos/provincias/distritos)
+      db.$queryRaw<Array<{ id: string; code: string }>>`
+        SELECT id, code FROM ubigeos
+      `,
+      
+      // 3. Tiendas (mapeo legacy_id → nuevo_id)
+      db.$queryRaw<Array<{ id: string; legacy_store_id: string }>>`
+        SELECT id, legacy_store_id FROM stores 
+        WHERE legacy_store_id IS NOT NULL
+      `,
+      
+      // 4. Roles
+      db.$queryRaw<Array<{ id: string; name: string }>>`
+        SELECT id, name FROM roles
+      `,
+    ]);
+
+    // Convertimos arrays a objetos de búsqueda rápida
+    CATALOG_CACHE = {
+      // { 'DNI': 'uuid-123', 'RUC': 'uuid-456' }
+      docTypes: Object.fromEntries(
+        docTypes.map((d) => [d.code, d.id])
+      ),
+      
+      // { '150101': 'uuid-789' }
+      ubigeos: Object.fromEntries(
+        ubigeos.map((u) => [u.code, u.id])
+      ),
+      
+      // { '65921': 'uuid-abc' }
+      stores: Object.fromEntries(
+        stores.map((s) => [String(s.legacy_store_id), s.id])
+      ),
+      
+      // { 'ADMIN_STORE': 'uuid-def' }
+      roles: Object.fromEntries(
+        roles.map((r) => [r.name, r.id])
+      ),
+    };
+
+    console.log('✅ Catálogos cargados:', {
+      docTypes: Object.keys(CATALOG_CACHE.docTypes).length,
+      ubigeos: Object.keys(CATALOG_CACHE.ubigeos).length,
+      stores: Object.keys(CATALOG_CACHE.stores).length,
+      roles: Object.keys(CATALOG_CACHE.roles).length,
+    });
+
+    return CATALOG_CACHE;
+  } catch (error) {
+    console.error('❌ Error cargando catálogos:', error);
+    throw new Error(
+      'No se pudo inicializar los catálogos. Verifica la conexión a Aurora'
+    );
+  }
+}
+
+/**
+ * Limpia el cache (útil para tests o recargar datos)
+ */
+export function clearCatalogCache(): void {
+  CATALOG_CACHE = null;
+}
+</file>
+
+<file path="src/utils/logger.ts">
+// src/utils/logger.ts
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+const LOG_LEVEL = (process.env.LOG_LEVEL || 'info') as LogLevel;
+const IS_DEV = process.env.NODE_ENV === 'development';
+
+const LEVELS: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
+
+function shouldLog(level: LogLevel): boolean {
+  return LEVELS[level] >= LEVELS[LOG_LEVEL];
+}
+
+function formatMessage(level: LogLevel, message: string, meta?: any): string {
+  const logEntry = {
+    level,
+    message,
+    timestamp: new Date().toISOString(),
+    ...meta,
+  };
+
+  if (IS_DEV) {
+    // Formato legible para desarrollo
+    const color = {
+      debug: '\x1b[36m',
+      info: '\x1b[32m',
+      warn: '\x1b[33m',
+      error: '\x1b[31m',
+    }[level];
+    return `${color}[${level.toUpperCase()}]${'\x1b[0m'} ${message} ${meta ? JSON.stringify(meta, null, 2) : ''}`;
+  }
+
+  return JSON.stringify(logEntry);
+}
+
+export const logger = {
+  debug: (message: string, meta?: any) => {
+    if (shouldLog('debug')) {
+      console.debug(formatMessage('debug', message, meta));
+    }
+  },
+  info: (message: string, meta?: any) => {
+    if (shouldLog('info')) {
+      console.log(formatMessage('info', message, meta));
+    }
+  },
+  warn: (message: string, meta?: any) => {
+    if (shouldLog('warn')) {
+      console.warn(formatMessage('warn', message, meta));
+    }
+  },
+  error: (message: string, meta?: any) => {
+    if (shouldLog('error')) {
+      console.error(formatMessage('error', message, meta));
+    }
+  },
+};
+</file>
+
+<file path="test/test-create-user-minimal.json">
+{
+  "eventId": "evt-create-20260814-003",
+  "eventType": "CREATE_USER",
+  "timestamp": "2026-08-14T12:00:00.000Z",
+  "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "person": {
+    "firstName": "María",
+    "lastName": "López",
+    "documentType": "DNI",
+    "documentNumber": "70999888"
+  },
+  "user": {
+    "email": "maria.lopez@example.com",
+    "cognitoSub": "sub-uuid-maria-lopez-003",
+    "isActive": true
+  },
+  "membership": {
+    "storeLegacyId": 65921,
+    "role": "MOTORIZED"
+  }
+}
+</file>
+
+<file path="test/test-create-user.json">
+{
+  "eventId": "evt-create-20260814-001",
+  "eventType": "CREATE_USER",
+  "timestamp": "2026-08-14T10:30:00.000Z",
+  "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "person": {
+    "legacyPersonId": 1001,
+    "firstName": "Juan",
+    "lastName": "Pérez Rodríguez",
+    "documentType": "DNI",
+    "documentNumber": "70123456",
+    "ubigeoCode": "150101",
+    "address": "Av. Javier Prado 123, San Isidro, Lima"
+  },
+  "user": {
+    "legacyUserId": 5001,
+    "email": "juan.perez@example.com",
+    "cognitoSub": "sub-uuid-juan-perez-001",
+    "isActive": true,
+    "lastLoginAt": "2026-08-13T18:45:00.000Z",
+    "phone": "51987654321"
+  },
+  "membership": {
+    "storeLegacyId": 65921,
+    "role": "ADMIN_STORE",
+    "isOwnerStore": true,
+    "warehouseLegacyId": 12,
+    "isActive": true
+  },
+  "settings": {
+    "companyPrefix": "ALC",
+    "spreadsheetOrder": {
+      "spreadSheetId": "1A2B3C4D5E",
+      "sheetName": "Orders"
+    }
+  }
+}
+</file>
+
+<file path="test/test-update-user.json">
+{
+  "eventId": "evt-update-20260814-002",
+  "eventType": "UPDATE_USER",
+  "timestamp": "2026-08-14T11:15:00.000Z",
+  "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "person": {
+    "firstName": "Juan Carlos",
+    "lastName": "Pérez Rodríguez Actualizado",
+    "documentNumber": "70123456",
+    "address": "Calle Las Flores 456, Miraflores, Lima"
+  },
+  "user": {
+    "email": "juan.perez@example.com",
+    "cognitoSub": "sub-uuid-juan-perez-001",
+    "isActive": true
+  },
+  "membership": {
+    "storeLegacyId": 65921,
+    "role": "SELLER",
+    "isOwnerStore": false,
+    "isActive": true
+  }
+}
+</file>
+
+<file path=".env.example">
+
+</file>
+
+<file path="package.json">
+{
+  "name": "aliclik-migration",
+  "version": "1.0.0",
+  "description": "Lambda para migración de usuarios desde Heroku a Aurora",
+  "main": "dist/handlers/processSqsMigration.js",
+  "scripts": {
+    "postinstall": "prisma generate",
+    "build": "prisma generate && tsc",
+    "deploy": "serverless deploy",
+    "deploy:prod": "serverless deploy --stage prod",
+    "deploy:dev": "serverless deploy --stage dev",
+    "dev": "serverless offline",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:studio": "prisma studio"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "prisma",
+    "migration",
+    "sqs"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.21.0",
+      "onFail": "download"
+    }
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.162",
+    "@types/node": "^26.2.0",
+    "@types/uuid": "^11.0.0",
+    "prisma": "^5.22.0",
+    "serverless": "^3.40.0",
+    "serverless-dotenv-plugin": "^6.0.0",
+    "serverless-esbuild": "^1.57.2",
+    "serverless-offline": "^14.8.0",
+    "serverless-prisma": "^0.0.1",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "uuid": "^14.0.1"
+  }
+}
+</file>
+
+<file path="pnpm-workspace.yaml">
+allowBuilds:
+  '@parcel/watcher': false
+  '@prisma/client': true
+  '@prisma/engines': true
+  aws-sdk: true
+  es5-ext: false
+  esbuild: false
+  prisma: true
+  serverless: true
+</file>
+
+<file path="serverless.yml">
+service: aliclik-migration
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${env:AWS_REGION, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  timeout: 30
+  memorySize: 512
+  environment:
+    PRISMA_QUERY_ENGINE_LIBRARY: /var/task/libquery_engine-rhel-openssl-3.0.x.so.node
+    DATABASE_URL: ${env:DATABASE_URL, ''}
+    AURORA_DATABASE_URL: ${env:AURORA_DATABASE_URL, ''}
+    NODE_ENV: ${env:NODE_ENV, 'development'}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'info'}
+    SQS_QUEUE_URL: ${env:SQS_QUEUE_URL, 'https://sqs.us-east-1.amazonaws.com/417609992114/User-migration-queue-v2'}
+    SQS_DLQ_URL: ${env:SQS_DLQ_URL, 'https://sqs.us-east-1.amazonaws.com/417609992114/user-migration-dlq-v2'}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+            - sqs:SendMessage
+          Resource:
+            - ${env:SQS_QUEUE_ARN, 'arn:aws:sqs:us-east-1:417609992114:User-migration-queue-v2'}
+            - ${env:SQS_DLQ_ARN, 'arn:aws:sqs:us-east-1:417609992114:user-migration-dlq-v2'}
+
+plugins:
+  - serverless-esbuild
+  - serverless-offline
+  - serverless-dotenv-plugin
+
+custom:
+  esbuild:
+    bundle: true
+    minify: false
+    sourcemap: true
+    target: node20
+    packager: pnpm
+
+package:
+  individually: false
+  patterns:
+    - 'libquery_engine-rhel-openssl-3.0.x.so.node'
+    - 'prisma/schema.prisma'
+
+functions:
+  processSqsMigration:
+    handler: src/handlers/processSqsMigration.handler
+    events:
+      - sqs:
+          arn: ${env:SQS_QUEUE_ARN, 'arn:aws:sqs:us-east-1:417609992114:User-migration-queue-v2'}
+          batchSize: 10
+          maximumBatchingWindow: 60
+          functionResponseType: ReportBatchItemFailures
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+</file>
+
+</files>

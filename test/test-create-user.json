@@ -1,0 +1,37 @@
+{
+  "eventId": "evt-create-20260814-001",
+  "eventType": "CREATE_USER",
+  "timestamp": "2026-08-14T10:30:00.000Z",
+  "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "person": {
+    "legacyPersonId": 1001,
+    "firstName": "Juan",
+    "lastName": "Pérez Rodríguez",
+    "documentType": "DNI",
+    "documentNumber": "70123456",
+    "ubigeoCode": "150101",
+    "address": "Av. Javier Prado 123, San Isidro, Lima"
+  },
+  "user": {
+    "legacyUserId": 5001,
+    "email": "juan.perez@example.com",
+    "cognitoSub": "sub-uuid-juan-perez-001",
+    "isActive": true,
+    "lastLoginAt": "2026-08-13T18:45:00.000Z",
+    "phone": "51987654321"
+  },
+  "membership": {
+    "storeLegacyId": 65921,
+    "role": "ADMIN_STORE",
+    "isOwnerStore": true,
+    "warehouseLegacyId": 12,
+    "isActive": true
+  },
+  "settings": {
+    "companyPrefix": "ALC",
+    "spreadsheetOrder": {
+      "spreadSheetId": "1A2B3C4D5E",
+      "sheetName": "Orders"
+    }
+  }
+}

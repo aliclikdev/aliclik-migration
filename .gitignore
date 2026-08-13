@@ -1,0 +1,46 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+*.tsbuildinfo
+
+# Serverless Framework
+.serverless/
+.esbuild/
+
+# Variables de entorno (nunca commitear secretos/credenciales)
+.env
+.env.*
+!.env.example
+
+# Prisma
+# El binary engine (libquery_engine-*.so.node) SÍ se commitea a propósito:
+# serverless.yml lo empaqueta explícitamente vía `package.patterns` para
+# no depender de que `prisma generate` corra en el entorno de build de Lambda.
+prisma/migrations/dev.db
+*.db
+*.db-journal
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing / cobertura
+coverage/
+.nyc_output/
+
+# AWS
+.aws-sam/

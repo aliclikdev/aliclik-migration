@@ -1,0 +1,50 @@
+{
+  "name": "aliclik-migration",
+  "version": "1.0.0",
+  "description": "Lambda para migración de usuarios desde Heroku a Aurora",
+  "main": "dist/handlers/processSqsMigration.js",
+  "scripts": {
+    "postinstall": "prisma generate",
+    "build": "prisma generate && tsc",
+    "deploy": "serverless deploy",
+    "deploy:prod": "serverless deploy --stage prod",
+    "deploy:dev": "serverless deploy --stage dev",
+    "dev": "serverless offline",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:studio": "prisma studio"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "prisma",
+    "migration",
+    "sqs"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.21.0",
+      "onFail": "download"
+    }
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.162",
+    "@types/node": "^26.2.0",
+    "@types/uuid": "^11.0.0",
+    "prisma": "^5.22.0",
+    "serverless": "^3.40.0",
+    "serverless-dotenv-plugin": "^6.0.0",
+    "serverless-esbuild": "^1.57.2",
+    "serverless-offline": "^14.8.0",
+    "serverless-prisma": "^0.0.1",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "uuid": "^14.0.1"
+  }
+}
