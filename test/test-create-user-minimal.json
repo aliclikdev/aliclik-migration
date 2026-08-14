@@ -1,21 +1,17 @@
 {
-  "eventId": "evt-create-20260814-003",
+  "eventId": "evt-create-20260814",
   "eventType": "CREATE_USER",
   "timestamp": "2026-08-14T12:00:00.000Z",
   "sourceSystem": "ALICLIK_LEGACY_HEROKU",
   "person": {
-    "firstName": "María",
+    "firstName": "María II",
     "lastName": "López",
     "documentType": "DNI",
-    "documentNumber": "70999888"
+    "documentNumber": "70999900"
   },
   "user": {
-    "email": "maria.lopez@example.com",
-    "cognitoSub": "sub-uuid-maria-lopez-003",
+    "email": "maria.lopez2@example.com",
+    "cognitoSub": "sub-uuid-maria-lopez2-003",
     "isActive": true
-  },
-  "membership": {
-    "storeLegacyId": 65921,
-    "role": "MOTORIZED"
   }
 }

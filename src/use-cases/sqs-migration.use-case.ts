@@ -1,362 +1,246 @@
-// src/use-cases/sqs-migration.use-case.ts
-import { PrismaClient, Prisma } from '@prisma/client';
-import { getAuroraDb } from '../services/aurora.service';
-import { acquireSqsMigrationLock, releaseSqsMigrationLock } from '../services/idempotency.service';
-import { getCatalogCache, clearCatalogCache, CatalogCache } from '../utils/catalog';
-import { logger } from '../utils/logger';
-import { v4 as uuidv4 } from 'uuid';
+import { PrismaClient } from '@prisma/client';
+import { IdempotencyService } from '../services/idempotency.service';
 import { UserMigrationMessage } from '../types/sqs-migration.types';
+import { getCatalogCache } from '../utils/catalog';
+import { logger } from '../utils/logger';
 
-type TxClient = Prisma.TransactionClient;
+export class SqsMigrationUseCase {
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly idempotencyService: IdempotencyService
+  ) {}
 
-export async function executeSqsMigration(message: UserMigrationMessage) {
-  const { eventId, eventType } = message;
+  async execute(payload: UserMigrationMessage): Promise<void> {
+    const { eventId, eventType } = payload;
 
-  logger.debug('Ejecutando migración', { eventId, eventType });
+    logger.info(`[SQS_MIGRATION] Procesando evento: ${eventId} | Tipo: ${eventType}`);
 
-  // 1. Idempotencia
-  const lock = await acquireSqsMigrationLock(eventId);
-  if (!lock) {
-    logger.info(`Evento ${eventId} ya fue procesado, ignorando`);
-    return { eventId, status: 'ALREADY_PROCESSED' };
-  }
-
-  try {
-    const auroraDb = getAuroraDb();
-    const cache = await getCatalogCache();
-
-    if (!cache || Object.keys(cache).length === 0) {
-      throw new Error('Catálogos no disponibles');
+    // Guard de Idempotencia
+    const lockAcquired = await this.idempotencyService.acquireLock(eventId);
+    if (!lockAcquired) {
+      logger.warn(`[SQS_MIGRATION] Evento omitido por idempotencia (ya procesado o en progreso): ${eventId}`);
+      return;
     }
 
-    let result;
-    switch (eventType) {
-      case 'CREATE_USER':
-        result = await handleCreateUser(auroraDb, message, cache);
-        break;
-      case 'UPDATE_USER':
-        result = await handleUpdateUser(auroraDb, message, cache);
-        break;
-      default:
-        throw new Error(`Tipo de evento no soportado: ${eventType}`);
-    }
-
-    await releaseSqsMigrationLock(eventId, 'PROCESSED');
-
-    logger.info(`✅ Evento ${eventId} procesado exitosamente`, {
-      eventType,
-      result,
-    });
-
-    return { eventId, status: 'SUCCESS', eventType };
-
-  } catch (error) {
-    await releaseSqsMigrationLock(eventId, 'FAILED');
-
-    logger.error(`❌ Error procesando evento ${eventId}`, {
-      error: error instanceof Error ? error.message : 'Error desconocido',
-      eventType,
-    });
-
-    throw error;
-  }
-}
-
-/**
- * Resuelve el id de un rol contra el catálogo cacheado. A diferencia de
- * `stores` (que sí tenía fallback a consulta directa), `roles` no lo tenía:
- * si se creaba un rol nuevo después del warmup de este contenedor Lambda,
- * cualquier evento con ese rol fallaba hasta que el contenedor se reciclara.
- * Aquí, si no se encuentra en cache, se fuerza una recarga completa del
- * catálogo una vez antes de fallar definitivamente.
- */
-async function resolveRoleId(cache: CatalogCache, role: string): Promise<string> {
-  let roleId = cache.roles[role];
-
-  if (!roleId) {
-    clearCatalogCache();
-    const refreshed = await getCatalogCache();
-    Object.assign(cache, refreshed);
-    roleId = cache.roles[role];
-  }
-
-  if (!roleId) {
-    throw new Error(`Rol ${role} no encontrado en Aurora`);
-  }
-
-  return roleId;
-}
-
-async function resolveStoreId(
-  tx: TxClient,
-  cache: CatalogCache,
-  storeLegacyId: number
-): Promise<string> {
-  let storeId = cache.stores[String(storeLegacyId)];
-
-  if (!storeId) {
-    const existingStore = await tx.store.findFirst({
-      where: { legacyStoreId: storeLegacyId },
-    });
-
-    if (existingStore) {
-      storeId = existingStore.id;
-    } else {
-      storeId = uuidv4();
-      await tx.store.create({
-        data: {
-          id: storeId,
-          legacyStoreId: storeLegacyId,
-          name: `Tienda ${storeLegacyId}`,
-          isActive: true,
-        },
-      });
-    }
-    cache.stores[String(storeLegacyId)] = storeId;
-  }
-
-  return storeId;
-}
-
-async function handleCreateUser(auroraDb: PrismaClient, message: UserMigrationMessage, cache: CatalogCache) {
-  const { person, user, membership } = message;
-
-  logger.debug('Creando usuario', {
-    documentNumber: person.documentNumber,
-    email: user.email,
-    cognitoSub: user.cognitoSub,
-  });
-
-  // Validaciones
-  if (!person.firstName || !person.lastName || !person.documentNumber) {
-    throw new Error('Campos obligatorios faltantes en persona');
-  }
-
-  if (!user.email || !user.cognitoSub) {
-    throw new Error('Campos obligatorios faltantes en usuario');
-  }
-
-  // Validar duplicados en Person
-  const existingPerson = await auroraDb.persons.findFirst({
-    where: {
-      OR: [
-        { document_number: person.documentNumber },
-        person.legacyPersonId != null ? { legacy_person_id: person.legacyPersonId } : undefined,
-      ].filter((clause): clause is NonNullable<typeof clause> => Boolean(clause)),
-    },
-  });
-
-  if (existingPerson) {
-    throw new Error(`Persona con documento ${person.documentNumber} ya existe`);
-  }
-
-  // Validar duplicados en User
-  const existingUser = await auroraDb.user.findFirst({
-    where: {
-      OR: [
-        { email: user.email },
-        { cognitoSub: user.cognitoSub },
-      ],
-    },
-  });
-
-  if (existingUser) {
-    throw new Error(`Usuario con email ${user.email} o cognitoSub ${user.cognitoSub} ya existe`);
-  }
-
-  // Validar catálogos
-  const docTypeKey = person.documentType || 'DNI';
-  const documentTypeId = cache.docTypes[docTypeKey];
-  if (!documentTypeId) {
-    throw new Error(`Tipo de documento ${docTypeKey} no encontrado en catálogo`);
-  }
-
-  let result;
-
-  await auroraDb.$transaction(async (tx: TxClient) => {
-    // 1. Crear Person
-    const personId = uuidv4();
-    await tx.persons.create({
-      data: {
-        id: personId,
-        legacy_person_id: person.legacyPersonId || null,
-        first_name: person.firstName,
-        last_name: person.lastName,
-        document_number: person.documentNumber,
-        document_type_id: documentTypeId,
-        ubigeo_id: person.ubigeoCode ? cache.ubigeos[person.ubigeoCode] || null : null,
-        address: person.address || null,
-      },
-    });
-
-    // 2. Crear User
-    const userId = uuidv4();
-    await tx.user.create({
-      data: {
-        id: userId,
-        personId: personId,
-        email: user.email,
-        passwordHash: '',
-        cognitoSub: user.cognitoSub,
-        isActive: user.isActive !== false,
-        lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt) : null,
-        // phone: user.phone || null,
-      },
-    });
-
-    // 3. Crear o Resolver Store y Membership
-    if (membership) {
-      const storeId = await resolveStoreId(tx, cache, membership.storeLegacyId);
-      const roleId = await resolveRoleId(cache, membership.role);
-
-      await tx.storeMembership.create({
-        data: {
-          id: uuidv4(),
-          userId: userId,
-          storeId: storeId,
-          roleId: roleId,
-          isActive: membership.isActive !== false,
-        },
-      });
-    }
-
-    result = {
-      personId,
-      userId,
-      action: 'CREATE_USER',
-      membershipCreated: !!membership,
-    };
-  });
-
-  return result;
-}
-
-async function handleUpdateUser(auroraDb: PrismaClient, message: UserMigrationMessage, cache: CatalogCache) {
-  const { person, user, membership } = message;
-
-  logger.debug('Actualizando usuario', {
-    email: user.email,
-    cognitoSub: user.cognitoSub,
-  });
-
-  if (!user.email && !user.cognitoSub) {
-    throw new Error('Se requiere email o cognitoSub para actualizar usuario');
-  }
-
-  let result;
-
-  await auroraDb.$transaction(async (tx: TxClient) => {
-    // 1. Buscar User existente
-    const existingUser = await tx.user.findFirst({
-      where: {
-        OR: [
-          user.email ? { email: user.email } : undefined,
-          user.cognitoSub ? { cognitoSub: user.cognitoSub } : undefined,
-        ].filter((clause): clause is NonNullable<typeof clause> => Boolean(clause)),
-      },
-      include: {
-        person: true,
-        memberships: true,
-      },
-    });
-
-    if (!existingUser) {
-      throw new Error(`Usuario no encontrado: ${user.email || user.cognitoSub}`);
-    }
-
-    // 1.b Si se está cambiando el email, validar que no choque con otro usuario.
-    // Antes no se validaba: el UPDATE podía fallar con un error crudo de
-    // constraint único de Prisma, o en el peor caso (email igual a otro
-    // usuario distinto al que se está tocando) dar un resultado confuso.
-    if (user.email && user.email !== existingUser.email) {
-      const emailTaken = await tx.user.findFirst({
-        where: {
-          email: user.email,
-          id: { not: existingUser.id },
-        },
-      });
-
-      if (emailTaken) {
-        throw new Error(`El email ${user.email} ya está en uso por otro usuario`);
-      }
-    }
-
-    // 2. Actualizar Person
-    if (existingUser.person && person) {
-      const personUpdateData: Prisma.personsUpdateInput = {};
-      if (person.firstName) personUpdateData.first_name = person.firstName;
-      if (person.lastName) personUpdateData.last_name = person.lastName;
-      if (person.documentNumber) personUpdateData.document_number = person.documentNumber;
-      if (person.address !== undefined) personUpdateData.address = person.address;
-      if (person.documentType && cache.docTypes[person.documentType]) {
-        personUpdateData.document_types = { connect: { id: cache.docTypes[person.documentType] } };
-      }
-      if (person.ubigeoCode && cache.ubigeos[person.ubigeoCode]) {
-        personUpdateData.ubigeos = { connect: { id: cache.ubigeos[person.ubigeoCode] } };
+    try {
+      switch (eventType) {
+        case 'CREATE_USER':
+          await this.handleCreateUser(payload);
+          break;
+        case 'UPDATE_USER':
+          await this.handleUpdateUser(payload);
+          break;
+        case 'DELETE_USER' as any:
+          await this.handleDeleteUser(payload);
+          break;
+        default:
+          logger.warn(`[SQS_MIGRATION] Tipo de evento no soportado: ${eventType}`);
       }
 
-      if (Object.keys(personUpdateData).length > 0) {
-        await tx.persons.update({
-          where: { id: existingUser.id },
-          data: personUpdateData,
-        });
-      }
+      await this.idempotencyService.markAsProcessed(eventId);
+      logger.info(`[SQS_MIGRATION] Evento completado con éxito: ${eventId}`);
+    } catch (error) {
+      logger.error(`[SQS_MIGRATION] Error procesando evento ${eventId}:`, error);
+      await this.idempotencyService.releaseLock(eventId);
+      throw error;
     }
+  }
 
-    // 3. Actualizar User
-    const userUpdateData: Prisma.UserUpdateInput = {};
-    if (user.isActive !== undefined) userUpdateData.isActive = user.isActive;
-    // if (user.phone) userUpdateData.phone = user.phone;
-    if (user.email) userUpdateData.email = user.email;
+  // =========================================================================
+  // 1. CREATE_USER: Persons -> Users -> StoreMemberships
+  // =========================================================================
+  private async handleCreateUser(payload: UserMigrationMessage): Promise<void> {
+    const catalog = await getCatalogCache();
+    const { person: personData, user: userData, membership: membershipData } = payload;
 
-    if (Object.keys(userUpdateData).length > 0) {
-      await tx.user.update({
-        where: { id: existingUser.id },
-        data: userUpdateData,
+    // Mapeo de Catálogos
+    const docTypeId = personData.documentType ? catalog.docTypes[personData.documentType] : undefined;
+    const ubigeoId = personData.ubigeoCode ? catalog.ubigeos[personData.ubigeoCode] : undefined;
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1.1 Crear o buscar Persona (por document_number)
+      let person = await tx.persons.findUnique({
+        where: { document_number: personData.documentNumber },
       });
-    }
 
-    // 4. Actualizar o Crear StoreMembership (Upsert)
-    if (membership) {
-      const storeId = await resolveStoreId(tx, cache, membership.storeLegacyId);
-      const roleId = await resolveRoleId(cache, membership.role);
-
-      const existingMembership = existingUser.memberships?.find(
-        (m) => m.storeId === storeId
-      );
-
-      if (existingMembership) {
-        const membershipUpdateData: Prisma.StoreMembershipUpdateInput = {};
-        if (membership.role) membershipUpdateData.role = { connect: { id: roleId } };
-        if (membership.isActive !== undefined) {
-          membershipUpdateData.isActive = membership.isActive;
-        }
-
-        if (Object.keys(membershipUpdateData).length > 0) {
-          await tx.storeMembership.update({
-            where: { id: existingMembership.id },
-            data: membershipUpdateData,
-          });
-        }
-      } else {
-        await tx.storeMembership.create({
+      if (!person) {
+        logger.info(`[CREATE_USER] Creando registro de persona: ${personData.documentNumber}`);
+        person = await tx.persons.create({
           data: {
-            id: uuidv4(),
-            userId: existingUser.id,
-            storeId: storeId,
-            roleId: roleId,
-            isActive: membership.isActive !== false,
+            legacy_person_id: personData.legacyPersonId ? BigInt(personData.legacyPersonId) : null,
+            first_name: personData.firstName,
+            last_name: personData.lastName,
+            document_type_id: docTypeId || null,
+            document_number: personData.documentNumber,
+            ubigeo_id: ubigeoId || null,
+            address: personData.address || null,
           },
         });
       }
-    }
 
-    result = {
-      userId: existingUser.id,
-      action: 'UPDATE_USER',
-      updated: true,
-    };
-  });
+      // 1.2 Crear Usuario
+      logger.info(`[CREATE_USER] Creando usuario: ${userData.email}`);
+      const createdUser = await tx.users.create({
+        data: {
+          person_id: person.id,
+          email: userData.email,
+          cognito_sub: userData.cognitoSub,
+          is_active: userData.isActive ?? true,
+          last_login_at: userData.lastLoginAt ? new Date(userData.lastLoginAt) : null,
+        },
+      });
 
-  return result;
+      // 1.3 Crear Membresía
+      if (membershipData) {
+        const storeId = catalog.stores[String(membershipData.storeLegacyId)];
+        const roleId = catalog.roles[membershipData.role];
+
+        if (!storeId) {
+          throw new Error(`Store legacy ID ${membershipData.storeLegacyId} no encontrado en catálogo.`);
+        }
+        if (!roleId) {
+          throw new Error(`Rol ${membershipData.role} no encontrado en catálogo.`);
+        }
+
+        logger.info(`[CREATE_USER] Creando membresía para tienda ID: ${storeId}`);
+        await tx.store_memberships.create({
+          data: {
+            user_id: createdUser.id,
+            store_id: storeId,
+            role_id: roleId,
+            is_owner: membershipData.isOwnerStore ?? false,
+            is_active: membershipData.isActive ?? true,
+          },
+        });
+      }
+    });
+  }
+
+  // =========================================================================
+  // 2. UPDATE_USER: Persons -> Users -> StoreMemberships
+  // =========================================================================
+  private async handleUpdateUser(payload: UserMigrationMessage): Promise<void> {
+    const catalog = await getCatalogCache();
+    const { person: personData, user: userData, membership: membershipData } = payload;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Búsqueda del usuario por cognito_sub o email
+      let user = await tx.users.findFirst({
+        where: {
+          OR: [
+            { cognito_sub: userData.cognitoSub },
+            { email: userData.email },
+          ],
+        },
+        include: { person: true },
+      });
+
+      if (!user) {
+        throw new Error(`[UPDATE_USER] Usuario no encontrado para cognitoSub: ${userData.cognitoSub} o email: ${userData.email}`);
+      }
+
+      // 2.1 Actualizar Persona si está presente en el payload
+      if (personData && user.person_id) {
+        const docTypeId = personData.documentType ? catalog.docTypes[personData.documentType] : undefined;
+        const ubigeoId = personData.ubigeoCode ? catalog.ubigeos[personData.ubigeoCode] : undefined;
+
+        logger.info(`[UPDATE_USER] Actualizando persona ID: ${user.person_id}`);
+        await tx.persons.update({
+          where: { id: user.person_id },
+          data: {
+            ...(personData.firstName && { first_name: personData.firstName }),
+            ...(personData.lastName && { last_name: personData.lastName }),
+            ...(docTypeId && { document_type_id: docTypeId }),
+            ...(personData.documentNumber && { document_number: personData.documentNumber }),
+            ...(ubigeoId !== undefined && { ubigeo_id: ubigeoId }),
+            ...(personData.address !== undefined && { address: personData.address }),
+          },
+        });
+      }
+
+      // 2.2 Actualizar Usuario
+      logger.info(`[UPDATE_USER] Actualizando datos de usuario ID: ${user.id}`);
+      await tx.users.update({
+        where: { id: user.id },
+        data: {
+          ...(userData.email && { email: userData.email }),
+          ...(userData.cognitoSub && { cognito_sub: userData.cognitoSub }),
+          ...(userData.isActive !== undefined && { is_active: userData.isActive }),
+          ...(userData.lastLoginAt && { last_login_at: new Date(userData.lastLoginAt) }),
+        },
+      });
+
+      // 2.3 Sincronizar / Actualizar Membresías
+      if (membershipData) {
+        const storeId = catalog.stores[String(membershipData.storeLegacyId)];
+        const roleId = catalog.roles[membershipData.role];
+
+        if (storeId && roleId) {
+          logger.info(`[UPDATE_USER] Actualizando/Creando membresía de tienda ID: ${storeId}`);
+          await tx.store_memberships.upsert({
+            where: {
+              idx_user_store_unique: {
+                user_id: user.id,
+                store_id: storeId,
+              },
+            },
+            create: {
+              user_id: user.id,
+              store_id: storeId,
+              role_id: roleId,
+              is_owner: membershipData.isOwnerStore ?? false,
+              is_active: membershipData.isActive ?? true,
+            },
+            update: {
+              role_id: roleId,
+              ...(membershipData.isOwnerStore !== undefined && { is_owner: membershipData.isOwnerStore }),
+              ...(membershipData.isActive !== undefined && { is_active: membershipData.isActive }),
+            },
+          });
+        }
+      }
+    });
+  }
+
+  // =========================================================================
+  // 3. DELETE_USER: StoreMemberships -> Users -> Persons (Orden por FK)
+  // =========================================================================
+  private async handleDeleteUser(payload: UserMigrationMessage): Promise<void> {
+    const { user: userData } = payload;
+
+    await this.prisma.$transaction(async (tx) => {
+      // Buscar usuario a desactivar
+      const user = await tx.users.findFirst({
+        where: {
+          OR: [
+            ...(userData.cognitoSub ? [{ cognito_sub: userData.cognitoSub }] : []),
+            ...(userData.email ? [{ email: userData.email }] : []),
+          ],
+        },
+        select: { id: true, person_id: true, is_active: true },
+      });
+
+      if (!user) {
+        logger.warn(`[DELETE_USER] Usuario no encontrado para desactivar (email: ${userData.email}, cognitoSub: ${userData.cognitoSub}).`);
+        return;
+      }
+
+      // 3.1 Desactivar Membresías activas del usuario
+      logger.info(`[DELETE_USER] Desactivando membresías del usuario ID: ${user.id}`);
+      await tx.store_memberships.updateMany({
+        where: { user_id: user.id, is_active: true },
+        data: { is_active: false },
+      });
+
+      // 3.2 Desactivar el Usuario
+      logger.info(`[DELETE_USER] Desactivando usuario ID: ${user.id}`);
+      await tx.users.update({
+        where: { id: user.id },
+        data: { is_active: false },
+      });
+
+      // Nota: Mantener el registro de 'persons' intacto preserva la identidad 
+      // e historial legal de la persona en el sistema.
+    });
+  }
 }

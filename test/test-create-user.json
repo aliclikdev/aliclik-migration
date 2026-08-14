@@ -1,21 +1,20 @@
-{
-  "eventId": "evt-create-20260814-001",
+{"eventId": "evt-create-20260814",
   "eventType": "CREATE_USER",
   "timestamp": "2026-08-14T10:30:00.000Z",
   "sourceSystem": "ALICLIK_LEGACY_HEROKU",
   "person": {
     "legacyPersonId": 1001,
-    "firstName": "Juan",
+    "firstName": "Juan II",
     "lastName": "Pérez Rodríguez",
     "documentType": "DNI",
-    "documentNumber": "70123456",
+    "documentNumber": "70123458",
     "ubigeoCode": "150101",
     "address": "Av. Javier Prado 123, San Isidro, Lima"
   },
   "user": {
     "legacyUserId": 5001,
-    "email": "juan.perez@example.com",
-    "cognitoSub": "sub-uuid-juan-perez-001",
+    "email": "juan.perez2065@example.com",
+    "cognitoSub": "sub-uuid-juan-perez-099",
     "isActive": true,
     "lastLoginAt": "2026-08-13T18:45:00.000Z",
     "phone": "51987654321"

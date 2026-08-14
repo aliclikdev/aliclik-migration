@@ -1,88 +1,43 @@
-import { getAuroraDb } from './aurora.service';
+import { PrismaClient } from '@prisma/client';
 
-// Tiempo máximo esperado para que una migración termine. Si un lock lleva
-// más de esto en estado LOCKED, se asume que el proceso que lo tomó murió
-// (timeout de Lambda, OOM, etc.) sin llegar al catch que libera el lock, y
-// se permite reintentar en vez de bloquear el evento para siempre.
-const STALE_LOCK_MINUTES = 15;
+export class IdempotencyService {
+  constructor(private readonly prisma: PrismaClient) {}
 
-/**
- * Adquiere un lock idempotente en Aurora.
- * @returns true si se adquirió (primera vez o recuperación de lock huérfano),
- *          false si ya existe un lock vigente o el evento ya fue procesado.
- */
-export async function acquireSqsMigrationLock(eventId: string): Promise<boolean> {
-  const db = getAuroraDb();
-  const lockKey = `sqs_migration:${eventId}`;
-
-  try {
-    await db.idempotency.create({
-      data: {
-        idempotency_key: lockKey,
-        status: 'LOCKED',
-      },
-    });
-    return true;
-  } catch (error: any) {
-    // P2002 es el código de Prisma para "Unique constraint violation"
-    if (error?.code !== 'P2002') {
+  async acquireLock(lockKey: string): Promise<boolean> {
+    try {
+      await this.prisma.idempotency.create({
+        data: {
+          idempotency_key: lockKey,
+          status: 'LOCKED',
+        },
+      });
+      return true;
+    } catch (error: any) {
+      // P2002 indica duplicado de Primary Key en Prisma (ya está procesado o en progreso)
+      if (error.code === 'P2002') {
+        return false;
+      }
       throw error;
     }
+  }
 
-    const existing = await db.idempotency.findUnique({ where: { idempotency_key: lockKey } });
-
-    // Carrera improbable: otro proceso borró el registro justo ahora.
-    if (!existing) {
-      return false;
-    }
-
-    // Ya fue procesado (con éxito o falla) previamente: es un duplicado real.
-    if (existing.status !== 'LOCKED') {
-      return false;
-    }
-
-    const ageMs = Date.now() - existing.processedAt.getTime();
-    const isStale = ageMs > STALE_LOCK_MINUTES * 60 * 1000;
-
-    if (!isStale) {
-      // Lock vigente y reciente: otra ejecución lo está procesando ahora mismo.
-      return false;
-    }
-
-    // Lock huérfano: lo retomamos de forma optimista, condicionando el UPDATE
-    // al processedAt que leímos, para evitar que dos ejecuciones concurrentes
-    // "rescaten" el mismo lock huérfano al mismo tiempo.
-    const result = await db.idempotency.updateMany({
-      where: {
-        idempotency_key: lockKey,
-        status: 'LOCKED',
-        processedAt: existing.processedAt,
-      },
+  async markAsProcessed(lockKey: string): Promise<void> {
+    await this.prisma.idempotency.update({
+      where: { idempotency_key: lockKey },
       data: {
-        status: 'LOCKED',
-        processedAt: new Date(),
+        status: 'PROCESSED',
+        processed_at: new Date(),
       },
     });
-
-    return result.count > 0;
   }
-}
 
-/**
- * Libera el lock y marca el estado final.
- */
-export async function releaseSqsMigrationLock(
-  eventId: string,
-  status: 'PROCESSED' | 'FAILED' = 'PROCESSED'
-): Promise<void> {
-  const db = getAuroraDb();
-  const lockKey = `sqs_migration:${eventId}`;
-
-  await db.idempotency.update({
-    where: { idempotency_key: lockKey },
-    data: {
-      status,
-      processedAt: new Date(),
-    },
-  });
+  async releaseLock(lockKey: string): Promise<void> {
+    try {
+      await this.prisma.idempotency.delete({
+        where: { idempotency_key: lockKey },
+      });
+    } catch (error) {
+      // Ignorar si el registro ya no existía
+    }
+  }
 }

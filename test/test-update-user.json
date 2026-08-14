@@ -1,5 +1,5 @@
 {
-  "eventId": "evt-update-20260814-002",
+  "eventId": "evt-update-20260814",
   "eventType": "UPDATE_USER",
   "timestamp": "2026-08-14T11:15:00.000Z",
   "sourceSystem": "ALICLIK_LEGACY_HEROKU",

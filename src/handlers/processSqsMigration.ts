@@ -1,56 +1,20 @@
-// src/handlers/processSqsMigration.ts
-import { SQSEvent, Context } from 'aws-lambda';
-import { executeSqsMigration } from '../use-cases/sqs-migration.use-case';
-import { logger } from '../utils/logger';
-import { getCatalogCache } from '../utils/catalog';
+import { SQSHandler } from 'aws-lambda';
+import { PrismaClient } from '@prisma/client';
+import { SqsMigrationUseCase } from '../use-cases/sqs-migration.use-case';
+import { IdempotencyService } from '../services/idempotency.service';
+import { randomUUID } from 'crypto';
 
-export const handler = async (event: SQSEvent, context: Context) => {
-  logger.info('📦 Procesando mensajes SQS', {
-    recordCount: event.Records.length,
-    requestId: context.awsRequestId,
-  });
+const prisma = new PrismaClient();
+const idempotencyService = new IdempotencyService(prisma);
+const migrationUseCase = new SqsMigrationUseCase(prisma, idempotencyService);
 
-  // Warmup: cargar catálogos en memoria
-  await getCatalogCache();
-
-  const batchItemFailures: { itemIdentifier: string }[] = [];
-
+export const handler: SQSHandler = async (event) => {
   for (const record of event.Records) {
-    try {
-      const message = JSON.parse(record.body);
-      
-      // Validar estructura básica del mensaje
-      if (!message.eventId || !message.eventType) {
-        throw new Error('Mensaje inválido: faltan campos obligatorios');
-      }
+    const payload = JSON.parse(record.body);
 
-      await executeSqsMigration(message);
-      
-      logger.info('✅ Mensaje procesado exitosamente', {
-        eventId: message.eventId,
-        eventType: message.eventType,
-        messageId: record.messageId,
-      });
-      
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      
-      logger.error('❌ Error procesando mensaje', {
-        messageId: record.messageId,
-        error: errorMessage,
-        stack: error instanceof Error ? error.stack : undefined,
-        body: record.body,
-      });
+    // Asignamos el messageId de SQS a eventId si no viene dentro del body
+    payload.eventId = `${payload.eventId}-${randomUUID()}` || record.messageId;
 
-      // Marcar este mensaje como fallido para que SQS lo reintente o envíe a DLQ
-      batchItemFailures.push({
-        itemIdentifier: record.messageId,
-      });
-    }
+    await migrationUseCase.execute(payload);
   }
-
-  // Si hay fallos, SQS reintentará los mensajes fallidos según la política
-  return {
-    batchItemFailures,
-  };
 };

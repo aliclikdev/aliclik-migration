@@ -1,0 +1,10 @@
+{
+  "eventId": "evt-update-20260814",
+  "eventType": "DELETE_USER",
+  "timestamp": "2026-08-14T11:15:00.000Z",
+  "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "user": {
+    "email": "maria.lopez2@example.com",
+    "cognitoSub": "sub-uuid-maria-lopez2-003"
+  }
+}
