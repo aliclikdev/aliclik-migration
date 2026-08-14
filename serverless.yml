@@ -55,6 +55,12 @@ package:
 functions:
   processSqsMigration:
     handler: src/handlers/processSqsMigration.handler
+    vpc:
+      securityGroupIds:
+        - ${env:AURORA_SECURITY_GROUP_ID}
+      subnetIds:
+        - ${env:SUBNET_PRIVATE_1}
+        - ${env:SUBNET_PRIVATE_2}
     events:
       - sqs:
           arn: ${env:SQS_QUEUE_ARN}
