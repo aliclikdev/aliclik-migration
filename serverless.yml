@@ -39,6 +39,14 @@ plugins:
   - serverless-dotenv-plugin
 
 custom:
+  dotenv:
+    include:
+      - DATABASE_URL
+      - AURORA_DATABASE_URL
+      - NODE_ENV
+      - LOG_LEVEL
+      - SQS_QUEUE_URL
+      - SQS_DLQ_URL
   esbuild:
     bundle: true
     minify: false

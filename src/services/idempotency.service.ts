@@ -18,7 +18,7 @@ export async function acquireSqsMigrationLock(eventId: string): Promise<boolean>
   try {
     await db.idempotency.create({
       data: {
-        key: lockKey,
+        idempotency_key: lockKey,
         status: 'LOCKED',
       },
     });
@@ -29,7 +29,7 @@ export async function acquireSqsMigrationLock(eventId: string): Promise<boolean>
       throw error;
     }
 
-    const existing = await db.idempotency.findUnique({ where: { key: lockKey } });
+    const existing = await db.idempotency.findUnique({ where: { idempotency_key: lockKey } });
 
     // Carrera improbable: otro proceso borró el registro justo ahora.
     if (!existing) {
@@ -54,7 +54,7 @@ export async function acquireSqsMigrationLock(eventId: string): Promise<boolean>
     // "rescaten" el mismo lock huérfano al mismo tiempo.
     const result = await db.idempotency.updateMany({
       where: {
-        key: lockKey,
+        idempotency_key: lockKey,
         status: 'LOCKED',
         processedAt: existing.processedAt,
       },
@@ -79,7 +79,7 @@ export async function releaseSqsMigrationLock(
   const lockKey = `sqs_migration:${eventId}`;
 
   await db.idempotency.update({
-    where: { key: lockKey },
+    where: { idempotency_key: lockKey },
     data: {
       status,
       processedAt: new Date(),

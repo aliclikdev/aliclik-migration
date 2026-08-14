@@ -137,11 +137,11 @@ async function handleCreateUser(auroraDb: PrismaClient, message: UserMigrationMe
   }
 
   // Validar duplicados en Person
-  const existingPerson = await auroraDb.person.findFirst({
+  const existingPerson = await auroraDb.persons.findFirst({
     where: {
       OR: [
-        { documentNumber: person.documentNumber },
-        person.legacyPersonId != null ? { legacyPersonId: person.legacyPersonId } : undefined,
+        { document_number: person.documentNumber },
+        person.legacyPersonId != null ? { legacy_person_id: person.legacyPersonId } : undefined,
       ].filter((clause): clause is NonNullable<typeof clause> => Boolean(clause)),
     },
   });
@@ -176,15 +176,15 @@ async function handleCreateUser(auroraDb: PrismaClient, message: UserMigrationMe
   await auroraDb.$transaction(async (tx: TxClient) => {
     // 1. Crear Person
     const personId = uuidv4();
-    await tx.person.create({
+    await tx.persons.create({
       data: {
         id: personId,
-        legacyPersonId: person.legacyPersonId || null,
-        firstName: person.firstName,
-        lastName: person.lastName,
-        documentNumber: person.documentNumber,
-        documentTypeId: documentTypeId,
-        ubigeoId: person.ubigeoCode ? cache.ubigeos[person.ubigeoCode] || null : null,
+        legacy_person_id: person.legacyPersonId || null,
+        first_name: person.firstName,
+        last_name: person.lastName,
+        document_number: person.documentNumber,
+        document_type_id: documentTypeId,
+        ubigeo_id: person.ubigeoCode ? cache.ubigeos[person.ubigeoCode] || null : null,
         address: person.address || null,
       },
     });
@@ -200,7 +200,7 @@ async function handleCreateUser(auroraDb: PrismaClient, message: UserMigrationMe
         cognitoSub: user.cognitoSub,
         isActive: user.isActive !== false,
         lastLoginAt: user.lastLoginAt ? new Date(user.lastLoginAt) : null,
-        phone: user.phone || null,
+        // phone: user.phone || null,
       },
     });
 
@@ -283,21 +283,21 @@ async function handleUpdateUser(auroraDb: PrismaClient, message: UserMigrationMe
 
     // 2. Actualizar Person
     if (existingUser.person && person) {
-      const personUpdateData: Prisma.PersonUpdateInput = {};
-      if (person.firstName) personUpdateData.firstName = person.firstName;
-      if (person.lastName) personUpdateData.lastName = person.lastName;
-      if (person.documentNumber) personUpdateData.documentNumber = person.documentNumber;
+      const personUpdateData: Prisma.personsUpdateInput = {};
+      if (person.firstName) personUpdateData.first_name = person.firstName;
+      if (person.lastName) personUpdateData.last_name = person.lastName;
+      if (person.documentNumber) personUpdateData.document_number = person.documentNumber;
       if (person.address !== undefined) personUpdateData.address = person.address;
       if (person.documentType && cache.docTypes[person.documentType]) {
-        personUpdateData.documentType = { connect: { id: cache.docTypes[person.documentType] } };
+        personUpdateData.document_types = { connect: { id: cache.docTypes[person.documentType] } };
       }
       if (person.ubigeoCode && cache.ubigeos[person.ubigeoCode]) {
-        personUpdateData.ubigeo = { connect: { id: cache.ubigeos[person.ubigeoCode] } };
+        personUpdateData.ubigeos = { connect: { id: cache.ubigeos[person.ubigeoCode] } };
       }
 
       if (Object.keys(personUpdateData).length > 0) {
-        await tx.person.update({
-          where: { id: existingUser.personId },
+        await tx.persons.update({
+          where: { id: existingUser.id },
           data: personUpdateData,
         });
       }
@@ -306,7 +306,7 @@ async function handleUpdateUser(auroraDb: PrismaClient, message: UserMigrationMe
     // 3. Actualizar User
     const userUpdateData: Prisma.UserUpdateInput = {};
     if (user.isActive !== undefined) userUpdateData.isActive = user.isActive;
-    if (user.phone) userUpdateData.phone = user.phone;
+    // if (user.phone) userUpdateData.phone = user.phone;
     if (user.email) userUpdateData.email = user.email;
 
     if (Object.keys(userUpdateData).length > 0) {
