@@ -105,7 +105,6 @@ model users {
   id                                                            String                            @id @default(uuid()) @db.Char(36)
   person_id                                                     String?                           @db.Char(36)
   email                                                         String                            @unique(map: "email") @db.VarChar(255)
-  password_hash                                                 String?                           @db.VarChar(255)
   cognito_sub                                                   String?                           @unique(map: "cognito_sub") @db.VarChar(255)
   is_active                                                     Boolean?                          @default(true)
   last_login_at                                                 DateTime?                         @db.Timestamp(0)
