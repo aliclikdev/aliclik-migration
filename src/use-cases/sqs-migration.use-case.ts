@@ -290,35 +290,24 @@ export class SqsMigrationUseCase {
       logger.warn(`[GET_USER] Usuario no encontrado. Procediendo a crear registro on-the-fly.`);
       
       const catalog = await getCatalogCache();
-      
-      // Validaciones básicas para creación
-      if (!personData?.documentNumber) {
-         throw new Error('[GET_USER] No se puede crear el usuario porque falta person.documentNumber en el payload.');
-      }
 
       await this.prisma.$transaction(async (tx) => {
-        // A. Crear o Buscar Persona
-        let person = await tx.persons.findUnique({
-          where: { document_number: personData.documentNumber },
+      
+        const docTypeId = 'ef4128c2-95ce-11f1-b5bb-0efefcff1da7';
+        const ubigeoId = null;
+        
+        const person = await tx.persons.create({
+          data: {
+            legacy_person_id: personData.legacyPersonId ? BigInt(personData.legacyPersonId) : null,
+            first_name: personData.firstName || 'Unknown',
+            last_name: personData.lastName || 'Unknown',
+            document_type_id: docTypeId || null,
+            document_number: personData.documentNumber,
+            ubigeo_id: ubigeoId || null,
+            address: personData.address || null,
+          },
         });
-
-        if (!person) {
-          const docTypeId = personData.documentType ? catalog.docTypes[personData.documentType] : undefined;
-          const ubigeoId = personData.ubigeoCode ? catalog.ubigeos[personData.ubigeoCode] : undefined;
-          
-          person = await tx.persons.create({
-            data: {
-              legacy_person_id: personData.legacyPersonId ? BigInt(personData.legacyPersonId) : null,
-              first_name: personData.firstName || 'Unknown',
-              last_name: personData.lastName || 'Unknown',
-              document_type_id: docTypeId || null,
-              document_number: personData.documentNumber,
-              ubigeo_id: ubigeoId || null,
-              address: personData.address || null,
-            },
-          });
-        }
-
+      
         // B. Crear Usuario
         const newUser = await tx.users.create({
           data: {
@@ -388,7 +377,7 @@ export class SqsMigrationUseCase {
           firstName: person.first_name,
           lastName: person.last_name,
           fullName: [person.first_name, person.last_name].filter(Boolean).join(' '),
-          documentNumber: person.document_number,
+          documentNumber: person.document_number || null,
           birthDate: person.birth_date || undefined,
           address: person.address || undefined,
         } : null,

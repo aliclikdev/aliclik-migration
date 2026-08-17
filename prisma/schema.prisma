@@ -166,10 +166,10 @@ model Idempotency {
 model persons {
   id                     String                   @id @default(uuid()) @db.Char(36)
   legacy_person_id       BigInt?                  @db.BigInt
-  first_name             String                   @db.VarChar(100)
-  last_name              String                   @db.VarChar(100)
+  first_name             String?                   @db.VarChar(100)
+  last_name              String?                   @db.VarChar(100)
   document_type_id       String?                  @db.Char(36)
-  document_number        String                   @unique(map: "document_number") @db.VarChar(20)
+  document_number        String?                   @unique(map: "document_number") @db.VarChar(20)
   birth_date             DateTime?                @db.Date
   ubigeo_id              String?                  @db.Char(36)
   address                String?                  @db.Text

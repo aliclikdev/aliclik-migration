@@ -52,16 +52,16 @@ export interface UserMigrationResponse{
       lastLoginAt?: Date;
     };
     person: {
-      firstName: string;
+      firstName: string | null | undefined;
       fullName: string | null | undefined;
-      lastName: string;
-      documentNumber: string;
-      address?: string;
+      lastName: string | null | undefined;
+      documentNumber: string | null | undefined;
+      address?: string | null | undefined;
       birthDate: Date | null | undefined;
     } | null | undefined;
     memberships: Array<{
-      storeId: string;
-      roleId: string;
+      storeId: string | null | undefined;
+      roleId: string | null | undefined;
       isActive: boolean;
     }> | null | undefined;
   };
