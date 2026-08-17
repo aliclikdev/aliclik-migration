@@ -51,7 +51,7 @@ export class SqsMigrationUseCase {
         await this.idempotencyService.markAsProcessed(eventId);
       }
       
-      logger.info(`[SQS_MIGRATION] Evento completado con éxito: ${eventId}`);
+      logger.info(`[SQS_MIGRATION] Evento completado con éxito: ${eventId || (result|| {}).eventId }`);
       return result;
     } catch (error) {
       logger.error(`[SQS_MIGRATION] Error procesando evento ${eventId}:`, error);
@@ -258,9 +258,9 @@ export class SqsMigrationUseCase {
   // 4. GET_USER: GET DATA DEL USUARIO
   // =========================================================================
   private async handleGetUser(payload: UserMigrationMessage): Promise<UserMigrationResponse> {
-    const { eventId, user: userData } = payload;
+    const { eventId, user: userData, person: personData, membership: membershipData } = payload;
     
-    logger.info(`[GET_USER] Consultando usuario: ${userData.email || userData.cognitoSub}`);
+    logger.info(`[GET_USER] Consultando/Creando usuario: ${userData.email || userData.cognitoSub}`);
 
     const userConditions = [];
     if (userData.email) userConditions.push({ email: userData.email });
@@ -270,64 +270,113 @@ export class SqsMigrationUseCase {
       throw new Error('[GET_USER] Se requiere email o cognitoSub');
     }
 
-    const existingUser = await this.prisma.users.findFirst({
+    // 1. Intentar buscar el usuario
+    let existingUser = await this.prisma.users.findFirst({
       where: { OR: userConditions },
       include: {
-        person: {
-          include: {
-            document_types: true,
-            ubigeos: {
-              include: {
-                ubigeos: {           // Provincia
-                  include: {
-                    ubigeos: {       // Departamento
-                      include: {
-                        ubigeos: true // País (si existe)
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
+        person: true,
         memberships: {
           where: { is_active: true },
           include: {
-            store: {
-              select: {
-                id: true,
-                name: true,
-                business_name: true,
-                ruc: true,
-                logo_url: true,
-                is_active: true,
-              }
-            },
-            role: {
-              select: {
-                id: true,
-                name: true,
-                description: true,
-              }
-            }
+            store: { select: { id: true, name: true, business_name: true, ruc: true, logo_url: true, is_active: true } },
+            role: { select: { id: true, name: true, description: true } }
           }
         }
       }
     });
 
+    // 2. Si NO existe, procedemos a crearlo (Upsert logic)
     if (!existingUser) {
-      return { eventId, status: 'NOT_FOUND' };
+      logger.warn(`[GET_USER] Usuario no encontrado. Procediendo a crear registro on-the-fly.`);
+      
+      const catalog = await getCatalogCache();
+      
+      // Validaciones básicas para creación
+      if (!personData?.documentNumber) {
+         throw new Error('[GET_USER] No se puede crear el usuario porque falta person.documentNumber en el payload.');
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        // A. Crear o Buscar Persona
+        let person = await tx.persons.findUnique({
+          where: { document_number: personData.documentNumber },
+        });
+
+        if (!person) {
+          const docTypeId = personData.documentType ? catalog.docTypes[personData.documentType] : undefined;
+          const ubigeoId = personData.ubigeoCode ? catalog.ubigeos[personData.ubigeoCode] : undefined;
+          
+          person = await tx.persons.create({
+            data: {
+              legacy_person_id: personData.legacyPersonId ? BigInt(personData.legacyPersonId) : null,
+              first_name: personData.firstName || 'Unknown',
+              last_name: personData.lastName || 'Unknown',
+              document_type_id: docTypeId || null,
+              document_number: personData.documentNumber,
+              ubigeo_id: ubigeoId || null,
+              address: personData.address || null,
+            },
+          });
+        }
+
+        // B. Crear Usuario
+        const newUser = await tx.users.create({
+          data: {
+            person_id: person.id,
+            email: userData.email,
+            cognito_sub: userData.cognitoSub,
+            is_active: userData.isActive ?? true,
+            last_login_at: userData.lastLoginAt ? new Date(userData.lastLoginAt) : null,
+          },
+        });
+
+        // C. Crear Membresía (si viene en el payload)
+        if (membershipData) {
+          const storeId = catalog.stores[String(membershipData.storeLegacyId)];
+          const roleId = catalog.roles[membershipData.role];
+
+          if (storeId && roleId) {
+            await tx.store_memberships.create({
+              data: {
+                user_id: newUser.id,
+                store_id: storeId,
+                role_id: roleId,
+                is_owner: membershipData.isOwnerStore ?? false,
+                is_active: membershipData.isActive ?? true,
+              },
+            });
+          }
+        }
+      });
+
+      // Recargamos la data completa después de la transacción para retornarla consistente
+      existingUser = await this.prisma.users.findFirst({
+        where: { OR: userConditions },
+        include: {
+          person: true,
+          memberships: {
+            where: { is_active: true },
+            include: {
+              store: { select: { id: true, name: true, business_name: true, ruc: true, logo_url: true, is_active: true } },
+              role: { select: { id: true, name: true, description: true } }
+            }
+          }
+        }
+      });
+    }
+
+    // 3. Retornar la data (ya sea la encontrada originalmente o la recién creada)
+    if (!existingUser) {
+       // Esto técnicamente no debería pasar si la creación fue exitosa, pero por seguridad
+       return { eventId, status: 'NOT_FOUND' };
     }
 
     const person = existingUser.person;
-    const ubigeo = person?.ubigeos;
-
+    
     return {
       eventId,
       status: 'SUCCESS',
       data: {
-        // ✅ Datos completos del usuario
         user: {
           id: existingUser.id,
           email: existingUser.email,
@@ -335,8 +384,6 @@ export class SqsMigrationUseCase {
           isActive: existingUser.is_active ?? true,
           lastLoginAt: existingUser.last_login_at || undefined,
         },
-        
-        // ✅ Datos completos de la persona
         person: person ? {
           firstName: person.first_name,
           lastName: person.last_name,
@@ -345,8 +392,6 @@ export class SqsMigrationUseCase {
           birthDate: person.birth_date || undefined,
           address: person.address || undefined,
         } : null,
-        
-        // ✅ Membresías con más detalles
         memberships: (existingUser.memberships || []).map((m: any) => ({
           id: m.id,
           store: {

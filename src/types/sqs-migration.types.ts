@@ -40,7 +40,7 @@ export interface UserMigrationMessage {
 }
 
 export interface UserMigrationResponse{
-   eventId: string;
+  eventId: string;
   status: 'SUCCESS' | 'ALREADY_PROCESSED' | 'NOT_FOUND';
   data?: {
     user: {
