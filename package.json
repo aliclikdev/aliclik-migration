@@ -46,6 +46,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@aws-sdk/client-sqs": "^3.1111.0",
     "@prisma/client": "^5.22.0",
     "uuid": "^14.0.1"
   }

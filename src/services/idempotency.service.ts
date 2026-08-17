@@ -1,11 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 
 export class IdempotencyService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma?: PrismaClient) {}
 
   async acquireLock(lockKey: string): Promise<boolean> {
     try {
-      await this.prisma.idempotency.create({
+      await this.prisma?.idempotency.create({
         data: {
           idempotency_key: lockKey,
           status: 'LOCKED',
@@ -22,7 +22,7 @@ export class IdempotencyService {
   }
 
   async markAsProcessed(lockKey: string): Promise<void> {
-    await this.prisma.idempotency.update({
+    await this.prisma?.idempotency.update({
       where: { idempotency_key: lockKey },
       data: {
         status: 'PROCESSED',
@@ -33,7 +33,7 @@ export class IdempotencyService {
 
   async releaseLock(lockKey: string): Promise<void> {
     try {
-      await this.prisma.idempotency.delete({
+      await this.prisma?.idempotency.delete({
         where: { idempotency_key: lockKey },
       });
     } catch (error) {

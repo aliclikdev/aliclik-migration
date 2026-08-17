@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { IdempotencyService } from '../services/idempotency.service';
-import { UserMigrationMessage } from '../types/sqs-migration.types';
+import { UserMigrationMessage, UserMigrationResponse } from '../types/sqs-migration.types';
 import { getCatalogCache } from '../utils/catalog';
 import { logger } from '../utils/logger';
 
@@ -10,19 +10,26 @@ export class SqsMigrationUseCase {
     private readonly idempotencyService: IdempotencyService
   ) {}
 
-  async execute(payload: UserMigrationMessage): Promise<void> {
+  async execute(payload: UserMigrationMessage): Promise<UserMigrationResponse | void> {
     const { eventId, eventType } = payload;
 
     logger.info(`[SQS_MIGRATION] Procesando evento: ${eventId} | Tipo: ${eventType}`);
 
-    // Guard de Idempotencia
-    const lockAcquired = await this.idempotencyService.acquireLock(eventId);
-    if (!lockAcquired) {
-      logger.warn(`[SQS_MIGRATION] Evento omitido por idempotencia (ya procesado o en progreso): ${eventId}`);
-      return;
+    // ⚠️ Solo aplicamos idempotencia para mutaciones (CREATE/UPDATE/DELETE)
+    const isMutation = eventType !== 'GET_USER';
+    let lockAcquired = false;
+
+    if (isMutation) {
+      lockAcquired = await this.idempotencyService.acquireLock(eventId);
+      if (!lockAcquired) {
+        logger.warn(`[SQS_MIGRATION] Evento omitido por idempotencia: ${eventId}`);
+        return;
+      }
     }
 
     try {
+      let result: UserMigrationResponse | void = undefined;
+
       switch (eventType) {
         case 'CREATE_USER':
           await this.handleCreateUser(payload);
@@ -30,21 +37,32 @@ export class SqsMigrationUseCase {
         case 'UPDATE_USER':
           await this.handleUpdateUser(payload);
           break;
-        case 'DELETE_USER' as any:
+        case 'DELETE_USER':
           await this.handleDeleteUser(payload);
+          break;
+        case 'GET_USER':
+          result = await this.handleGetUser(payload);
           break;
         default:
           logger.warn(`[SQS_MIGRATION] Tipo de evento no soportado: ${eventType}`);
       }
 
-      await this.idempotencyService.markAsProcessed(eventId);
+      if (isMutation) {
+        await this.idempotencyService.markAsProcessed(eventId);
+      }
+      
       logger.info(`[SQS_MIGRATION] Evento completado con éxito: ${eventId}`);
+      return result;
     } catch (error) {
       logger.error(`[SQS_MIGRATION] Error procesando evento ${eventId}:`, error);
-      await this.idempotencyService.releaseLock(eventId);
+      if (isMutation && lockAcquired) {
+        await this.idempotencyService.releaseLock(eventId);
+      }
       throw error;
     }
   }
+
+
 
   // =========================================================================
   // 1. CREATE_USER: Persons -> Users -> StoreMemberships
@@ -58,7 +76,6 @@ export class SqsMigrationUseCase {
     const ubigeoId = personData.ubigeoCode ? catalog.ubigeos[personData.ubigeoCode] : undefined;
 
     await this.prisma.$transaction(async (tx) => {
-      // 1.1 Crear o buscar Persona (por document_number)
       let person = await tx.persons.findUnique({
         where: { document_number: personData.documentNumber },
       });
@@ -78,7 +95,6 @@ export class SqsMigrationUseCase {
         });
       }
 
-      // 1.2 Crear Usuario
       logger.info(`[CREATE_USER] Creando usuario: ${userData.email}`);
       const createdUser = await tx.users.create({
         data: {
@@ -90,7 +106,6 @@ export class SqsMigrationUseCase {
         },
       });
 
-      // 1.3 Crear Membresía
       if (membershipData) {
         const storeId = catalog.stores[String(membershipData.storeLegacyId)];
         const roleId = catalog.roles[membershipData.role];
@@ -123,15 +138,17 @@ export class SqsMigrationUseCase {
     const catalog = await getCatalogCache();
     const { person: personData, user: userData, membership: membershipData } = payload;
 
+    const userConditions: Array<{ cognito_sub?: string; email?: string }> = [];
+    if (userData.cognitoSub) userConditions.push({ cognito_sub: userData.cognitoSub });
+    if (userData.email) userConditions.push({ email: userData.email });
+
+    if (userConditions.length === 0) {
+      throw new Error('[UPDATE_USER] Se requiere cognitoSub o email para identificar al usuario.');
+    }
+
     await this.prisma.$transaction(async (tx) => {
-      // Búsqueda del usuario por cognito_sub o email
       let user = await tx.users.findFirst({
-        where: {
-          OR: [
-            { cognito_sub: userData.cognitoSub },
-            { email: userData.email },
-          ],
-        },
+        where: { OR: userConditions },
         include: { person: true },
       });
 
@@ -139,7 +156,6 @@ export class SqsMigrationUseCase {
         throw new Error(`[UPDATE_USER] Usuario no encontrado para cognitoSub: ${userData.cognitoSub} o email: ${userData.email}`);
       }
 
-      // 2.1 Actualizar Persona si está presente en el payload
       if (personData && user.person_id) {
         const docTypeId = personData.documentType ? catalog.docTypes[personData.documentType] : undefined;
         const ubigeoId = personData.ubigeoCode ? catalog.ubigeos[personData.ubigeoCode] : undefined;
@@ -158,19 +174,15 @@ export class SqsMigrationUseCase {
         });
       }
 
-      // 2.2 Actualizar Usuario
       logger.info(`[UPDATE_USER] Actualizando datos de usuario ID: ${user.id}`);
       await tx.users.update({
         where: { id: user.id },
         data: {
-          ...(userData.email && { email: userData.email }),
-          ...(userData.cognitoSub && { cognito_sub: userData.cognitoSub }),
           ...(userData.isActive !== undefined && { is_active: userData.isActive }),
           ...(userData.lastLoginAt && { last_login_at: new Date(userData.lastLoginAt) }),
         },
       });
 
-      // 2.3 Sincronizar / Actualizar Membresías
       if (membershipData) {
         const storeId = catalog.stores[String(membershipData.storeLegacyId)];
         const roleId = catalog.roles[membershipData.role];
@@ -203,20 +215,23 @@ export class SqsMigrationUseCase {
   }
 
   // =========================================================================
-  // 3. DELETE_USER: StoreMemberships -> Users -> Persons (Orden por FK)
+  // 3. DELETE_USER: StoreMemberships -> Users -> Persons
   // =========================================================================
   private async handleDeleteUser(payload: UserMigrationMessage): Promise<void> {
     const { user: userData } = payload;
 
+    const userConditions: Array<{ cognito_sub?: string; email?: string }> = [];
+    if (userData.cognitoSub) userConditions.push({ cognito_sub: userData.cognitoSub });
+    if (userData.email) userConditions.push({ email: userData.email });
+
+    if (userConditions.length === 0) {
+      logger.warn('[DELETE_USER] No se proporcionó cognitoSub ni email para eliminar.');
+      return;
+    }
+
     await this.prisma.$transaction(async (tx) => {
-      // Buscar usuario a desactivar
       const user = await tx.users.findFirst({
-        where: {
-          OR: [
-            ...(userData.cognitoSub ? [{ cognito_sub: userData.cognitoSub }] : []),
-            ...(userData.email ? [{ email: userData.email }] : []),
-          ],
-        },
+        where: { OR: userConditions },
         select: { id: true, person_id: true, is_active: true },
       });
 
@@ -225,22 +240,134 @@ export class SqsMigrationUseCase {
         return;
       }
 
-      // 3.1 Desactivar Membresías activas del usuario
       logger.info(`[DELETE_USER] Desactivando membresías del usuario ID: ${user.id}`);
       await tx.store_memberships.updateMany({
         where: { user_id: user.id, is_active: true },
         data: { is_active: false },
       });
 
-      // 3.2 Desactivar el Usuario
       logger.info(`[DELETE_USER] Desactivando usuario ID: ${user.id}`);
       await tx.users.update({
         where: { id: user.id },
         data: { is_active: false },
       });
-
-      // Nota: Mantener el registro de 'persons' intacto preserva la identidad 
-      // e historial legal de la persona en el sistema.
     });
+  }
+
+  // =========================================================================
+  // 4. GET_USER: GET DATA DEL USUARIO
+  // =========================================================================
+  private async handleGetUser(payload: UserMigrationMessage): Promise<UserMigrationResponse> {
+    const { eventId, user: userData } = payload;
+    
+    logger.info(`[GET_USER] Consultando usuario: ${userData.email || userData.cognitoSub}`);
+
+    const userConditions = [];
+    if (userData.email) userConditions.push({ email: userData.email });
+    if (userData.cognitoSub) userConditions.push({ cognito_sub: userData.cognitoSub });
+
+    if (userConditions.length === 0) {
+      throw new Error('[GET_USER] Se requiere email o cognitoSub');
+    }
+
+    const existingUser = await this.prisma.users.findFirst({
+      where: { OR: userConditions },
+      include: {
+        person: {
+          include: {
+            document_types: true,
+            ubigeos: {
+              include: {
+                ubigeos: {           // Provincia
+                  include: {
+                    ubigeos: {       // Departamento
+                      include: {
+                        ubigeos: true // País (si existe)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        memberships: {
+          where: { is_active: true },
+          include: {
+            store: {
+              select: {
+                id: true,
+                name: true,
+                business_name: true,
+                ruc: true,
+                logo_url: true,
+                is_active: true,
+              }
+            },
+            role: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!existingUser) {
+      return { eventId, status: 'NOT_FOUND' };
+    }
+
+    const person = existingUser.person;
+    const ubigeo = person?.ubigeos;
+
+    return {
+      eventId,
+      status: 'SUCCESS',
+      data: {
+        // ✅ Datos completos del usuario
+        user: {
+          id: existingUser.id,
+          email: existingUser.email,
+          cognitoSub: existingUser.cognito_sub || '',
+          isActive: existingUser.is_active ?? true,
+          lastLoginAt: existingUser.last_login_at || undefined,
+        },
+        
+        // ✅ Datos completos de la persona
+        person: person ? {
+          firstName: person.first_name,
+          lastName: person.last_name,
+          fullName: [person.first_name, person.last_name].filter(Boolean).join(' '),
+          documentNumber: person.document_number,
+          birthDate: person.birth_date || undefined,
+          address: person.address || undefined,
+        } : null,
+        
+        // ✅ Membresías con más detalles
+        memberships: (existingUser.memberships || []).map((m: any) => ({
+          id: m.id,
+          store: {
+            id: m.store?.id || '',
+            name: m.store?.name || '',
+            businessName: m.store?.business_name || undefined,
+            ruc: m.store?.ruc || undefined,
+            logoUrl: m.store?.logo_url || undefined,
+            isActive: m.store?.is_active ?? true,
+          },
+          role: {
+            id: m.role?.id || '',
+            name: m.role?.name || '',
+            description: m.role?.description || undefined,
+          },
+          isOwner: m.is_owner,
+          employeeCode: m.employee_code || undefined,
+          hireDate: m.hire_date || undefined,
+          isActive: m.is_active ?? true,
+        })),
+      }
+    };
   }
 }
