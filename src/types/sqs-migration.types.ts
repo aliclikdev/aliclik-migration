@@ -13,7 +13,7 @@ export interface StoreWithDetails {
   legacyStoreId?: number;
   businessName?: string;
   ruc?: string;
-  logoUrl?: string;
+  logoUrl?: string | null | undefined;
   isActive: boolean;
 
   // Configuración agrupada
@@ -23,7 +23,7 @@ export interface StoreWithDetails {
     timezone?: string;
     defaultShippingCost?: number;
     motorizedWorkloadLimit?: number;
-    supportPhone?: string;
+    supportPhone?: string | null | undefined;
     supportEmail?: string;
     isEmailTransferVerified?: boolean;
   };
@@ -52,7 +52,7 @@ export interface UserMigrationMessage {
     lastName: string;
     documentType?: "DNI" | "RUC" | "CE" | "PASSPORT";
     birthDate?: Date | null | undefined;
-    documentNumber: string;
+    documentNumber: string | null | undefined;
     ubigeoCode?: string;
     address?: string;
   };

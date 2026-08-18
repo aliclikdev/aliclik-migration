@@ -1,0 +1,51 @@
+{
+  "eventId": "evt-get-user-20260819-test",
+  "eventType": "GET_USER",
+  "timestamp": "2026-08-19T15:30:00.000Z",
+  "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "replyToQueueUrl": "https://sqs.us-east-1.amazonaws.com/417609992114/user-response-queue",
+  "person": {
+    "legacyPersonId": 1001,
+    "firstName": "Juan Carlos",
+    "lastName": "Pérez Rodríguez",
+    "documentType": "DNI",
+    "documentNumber": "70123458",
+    "ubigeoCode": "150101",
+    "address": "Av. Javier Prado 123, San Isidro, Lima"
+  },
+  "user": {
+    "legacyUserId": 5001,
+    "email": "juan.perez2065@example.com",
+    "cognitoSub": "sub-uuid-juan-perez-099",
+    "isActive": true,
+    "lastLoginAt": "2026-08-13T18:45:00.000Z"
+  },
+  "store": {
+    "id": "uuid-store-abc-123",
+    "name": "Tienda Principal",
+    "legacyStoreId": 65921,
+    "businessName": "Comercializadora XYZ SAC",
+    "ruc": "20123456789",
+    "logoUrl": "https://s3.amazonaws.com/bucket/logo.png",
+    "isActive": true,
+    "settings": {
+      "companyPrefix": "ALC",
+      "currencyCode": "PEN",
+      "timezone": "America/Lima",
+      "defaultShippingCost": 10.50,
+      "motorizedWorkloadLimit": 25,
+      "supportPhone": "+51987654321",
+      "supportEmail": "soporte@tienda.com",
+      "isEmailTransferVerified": true
+    },
+    "membership": {
+      "roleId": "role-uuid-admin-001",
+      "roleName": "ADMIN_STORE",
+      "isOwner": true,
+      "employeeCode": "EMP001",
+      "hireDate": "2025-01-15T00:00:00.000Z",
+      "isActive": true
+    }
+  },
+  "termsAcceptance": null
+}
