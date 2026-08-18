@@ -82,6 +82,8 @@ model stores {
   wallets                wallets[]
   warehouse_skus         warehouse_skus[]
   warehouses             warehouses[]
+  // ✅ Agrega esta línea para completar la relación bidireccional
+  settings          store_settings? 
 
   @@unique([ruc, country_id], map: "idx_store_fiscal_unique")
   @@index([country_id, is_active], map: "idx_store_by_country")
@@ -120,6 +122,8 @@ model users {
   memberships                                                   store_memberships[]
   person                                                        persons?                          @relation(fields: [person_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_ibfk_1")
   wallet_transactions                                           wallet_transactions[]
+  acceptances   user_terms_acceptances[] 
+
 
   @@index([person_id], map: "person_id")
   @@map("users")
@@ -1178,4 +1182,70 @@ model warehouses {
 
   @@index([store_id], map: "idx_warehouse_by_store")
   @@index([store_id, is_active], map: "idx_warehouse_by_store_active")
+}
+
+model terms_conditions {
+  id          String    @id @default(uuid()) @db.Char(36)
+  title       String   @db.VarChar(255)
+  description String?  @db.Text
+  content     String   @db.LongText
+  role        String?  @db.VarChar(50) // Ej: 'ADMIN_STORE', 'SELLER' (o usar Enum si prefieres)
+  version     Int      @default(1)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamp(0)
+  updated_at  DateTime @updatedAt @db.Timestamp(0)
+
+  // Relación con aceptaciones
+  acceptances user_terms_acceptances[]
+
+  @@map("terms_conditions")
+}
+
+model user_terms_acceptances {
+  id           Int      @id @default(autoincrement())
+  user_id      String   @db.Char(36) // Asumiendo UUID como en users.id
+  terms_id     String   @db.Char(36)
+  
+  accepted_at  DateTime @default(now()) @db.Timestamp(0)
+  ip_address   String?  @db.VarChar(45)
+  user_agent   String?  @db.Text
+  
+  // Relaciones
+  user         users                      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  terms        terms_conditions       @relation(fields: [terms_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, terms_id]) // Un usuario solo puede aceptar una versión específica una vez
+  @@index([user_id])
+  @@index([terms_id])
+  @@map("user_terms_acceptances")
+}
+
+model store_settings {
+  id                String   @id @default(uuid())
+  store_id          String   @unique
+  
+  // Configuración Operativa Básica
+  company_prefix    String?  @db.VarChar(20)
+  currency_code     String   @default("PEN") @db.Char(3)
+  timezone          String?  @default("America/Lima") @db.VarChar(50)
+
+  // Configuración Logística por Defecto
+  default_shipping_cost Decimal? @default(0.00) @db.Decimal(12, 2)
+  motorized_workload_limit Int?         @default(25)
+
+  // Configuración de Notificaciones y Soporte
+  support_phone       String?  @db.VarChar(50)
+  support_email       String?  @db.VarChar(255)
+  is_email_transfer_verified Boolean @default(false)
+
+  // Metadatos y Control
+  config            Json?    
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  // Relaciones
+  store             stores   @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@index([store_id])
+  @@map("store_settings")
 }
