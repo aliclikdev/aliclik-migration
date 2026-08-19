@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { IdempotencyService } from "../services/idempotency.service";
 import {
+  StoreWithDetails,
   UserMigrationMessage,
   UserMigrationResponse,
 } from "../types/sqs-migration.types";
@@ -12,6 +13,21 @@ export class SqsMigrationUseCase {
     private readonly prisma: PrismaClient,
     private readonly idempotencyService: IdempotencyService,
   ) {}
+
+  private buildStoreSettingsData(
+    settings: NonNullable<StoreWithDetails["settings"]>,
+  ) {
+    return {
+      company_prefix: settings.companyPrefix,
+      currency_code: settings.currencyCode,
+      timezone: settings.timezone,
+      default_shipping_cost: settings.defaultShippingCost,
+      motorized_workload_limit: 0,
+      support_phone: settings.supportPhone,
+      support_email: settings.supportEmail,
+      is_email_transfer_verified: settings.isEmailTransferVerified,
+    };
+  }
 
   async execute(
     payload: UserMigrationMessage,
@@ -99,6 +115,20 @@ export class SqsMigrationUseCase {
       store: { membership } = {},
     } = payload;
 
+    const isExplicitCreate = payload.eventType === "CREATE_USER";
+
+    if (isExplicitCreate && !personData.documentNumber) {
+      throw new Error(
+        `[CREATE_USER] Se requiere documentNumber para crear un usuario nuevo (email: ${userData.email}).`,
+      );
+    }
+
+    if (!personData.documentNumber && !personData.legacyPersonId) {
+      throw new Error(
+        `[CREATE_USER] Se requiere documentNumber o legacyPersonId para identificar a la persona (email: ${userData.email}).`,
+      );
+    }
+
     // Mapeo de Catálogos básicos
     const docTypeId = personData.documentType
       ? catalog.docTypes[personData.documentType]
@@ -108,22 +138,33 @@ export class SqsMigrationUseCase {
       : undefined;
 
     await this.prisma.$transaction(async (tx) => {
-      // --- PASO A: Persona (Sin cambios) ---
+      // --- PASO A: Persona ---
+      let person = personData.documentNumber
+        ? await tx.persons.findUnique({
+            where: { document_number: personData.documentNumber },
+          })
+        : await tx.persons.findFirst({
+            where: { legacy_person_id: BigInt(personData.legacyPersonId!) },
+          });
 
-      logger.info(`[CREATE_USER] Creando persona`);
-      let person = await tx.persons.create({
-        data: {
-          legacy_person_id: personData.legacyPersonId
-            ? BigInt(personData.legacyPersonId)
-            : null,
-          first_name: personData.firstName,
-          last_name: personData.lastName,
-          document_type_id: docTypeId || null,
-          document_number: personData.documentNumber,
-          ubigeo_id: ubigeoId || null,
-          address: personData.address || null,
-        },
-      });
+      if (!person) {
+        logger.info(
+          `[CREATE_USER] Creando persona: ${personData.documentNumber || `legacyPersonId=${personData.legacyPersonId}`}`,
+        );
+        person = await tx.persons.create({
+          data: {
+            legacy_person_id: personData.legacyPersonId
+              ? BigInt(personData.legacyPersonId)
+              : null,
+            first_name: personData.firstName,
+            last_name: personData.lastName,
+            document_type_id: docTypeId || null,
+            document_number: personData.documentNumber || null,
+            ubigeo_id: ubigeoId || null,
+            address: personData.address || null,
+          },
+        });
+      }
 
       // --- PASO B: Usuario (Sin cambios) ---
       logger.info(
@@ -157,25 +198,37 @@ export class SqsMigrationUseCase {
         });
 
         // 2. Si NO existe, CREARLA automáticamente
+        let resolvedStoreId: string;
         if (!storeFind) {
           logger.warn(
             `[CREATE_USER] Tienda legacy ${store.legacyStoreId} no existe. Creándola...`,
           );
 
-          // Buscamos el país por defecto si no viene explícito, o usamos PER como fallback seguro
+          // País por defecto: Perú, resuelto desde el catálogo real (ya no hardcodeado).
           // Nota: Idealmente deberías pasar countryCode en membershipData o inferirlo
-          const defaultCountryId = "uuid-del-pais-peru"; // TODO: Obtener dinámicamente del catálogo
+          const defaultCountryId = catalog.countries["PER"];
+          if (!defaultCountryId) {
+            throw new Error(
+              `[CREATE_USER] País por defecto "PER" no encontrado en catálogo.`,
+            );
+          }
 
-          let storeCreate = await tx.stores.create({
+          const storeCreate = await tx.stores.create({
             data: {
               legacy_store_id: BigInt(store.legacyStoreId || 0),
-              name: store.name || `Tienda Legacy ${store.legacyStoreId || 0}`, // Nombre temporal
+              name: `${store.name}`, // Nombre temporal
+              business_name: store.businessName || null,
+              ruc: store.ruc || null,
+              logo_url: store.logoUrl || null,
               currency_code: "PEN", // Default seguro
               timezone: "America/Lima",
-              is_active: true,
+              is_active: store.isActive ?? true,
               country_id: defaultCountryId,
             },
           });
+          resolvedStoreId = storeCreate.id;
+        } else {
+          resolvedStoreId = storeFind.id;
         }
 
         // 3. Resolver Rol
@@ -188,18 +241,18 @@ export class SqsMigrationUseCase {
 
         // 4. Crear/Actualizar Membresía
         logger.info(
-          `[CREATE_USER] Vinculando usuario ${createdUser.id} a tienda ${store.id}`,
+          `[CREATE_USER] Vinculando usuario ${createdUser.id} a tienda ${resolvedStoreId}`,
         );
         await tx.store_memberships.upsert({
           where: {
             idx_user_store_unique: {
               user_id: createdUser.id,
-              store_id: store.id,
+              store_id: resolvedStoreId,
             },
           },
           create: {
             user_id: createdUser.id,
-            store_id: store.id,
+            store_id: resolvedStoreId,
             role_id: roleId,
             is_owner: membership.isOwner ?? false,
             is_active: membership.isActive ?? true,
@@ -210,6 +263,25 @@ export class SqsMigrationUseCase {
             is_active: membership.isActive ?? undefined,
           },
         });
+
+        if (!isExplicitCreate && store.settings) {
+          logger.info(
+            `[GET_USER] Actualizando/Creando settings para store_id: ${resolvedStoreId} (migración perezosa)`,
+          );
+
+          const settingsData = this.buildStoreSettingsData(store.settings);
+
+          await tx.store_settings.upsert({
+            where: { store_id: resolvedStoreId },
+            create: {
+              store_id: resolvedStoreId,
+              ...settingsData,
+            },
+            update: {
+              ...settingsData,
+            },
+          });
+        }
       }
     });
   }
@@ -449,19 +521,18 @@ export class SqsMigrationUseCase {
   }
 
   // =========================================================================
-  // 4. GET_USER: GET DATA DEL USUARIO + VALIDACIÓN/CREACIÓN DE TIENDA
+  // 4. GET_USER: GET DATA DEL USUARIO
   // =========================================================================
   private async handleGetUser(
     payload: UserMigrationMessage,
   ): Promise<UserMigrationResponse> {
-    // Extraemos person del payload aquí para evitar errores de referencia
-    const { eventId, user: userData, store, person: personPayload } = payload;
+    const { eventId, user: userData } = payload;
 
     logger.info(
       `[GET_USER] Consultando usuario: ${userData.email || userData.cognitoSub}`,
     );
 
-    // Validar identificadores mínimos del usuario
+    // Validar que tengamos al menos un identificador
     if (!userData.email && !userData.cognitoSub) {
       throw new Error("[GET_USER] Se requiere email o cognitoSub");
     }
@@ -470,183 +541,75 @@ export class SqsMigrationUseCase {
     if (userData.email) whereClause.email = userData.email;
     if (userData.cognitoSub) whereClause.cognito_sub = userData.cognitoSub;
 
-    // Ejecutamos todo en una sola transacción para garantizar consistencia
-    const result = await this.prisma.$transaction(async (tx) => {
-      // --- PASO A: Buscar Usuario ---
-      let existingUser = await tx.users.findFirst({
-        where: whereClause,
+    // Consulta optimizada: Solo traemos lo necesario
+    const includeClause = {
+      person: true, // Traemos persona plana, sin anidar ubigeos completos
+      memberships: {
+        where: { is_active: true },
         include: {
-          person: true,
-          memberships: {
-            where: { is_active: true },
-            include: {
-              store: {
-                select: {
-                  id: true,
-                  name: true,
-                  business_name: true,
-                  ruc: true,
-                  logo_url: true,
-                  is_active: true,
-                  settings: true,
-                },
-              },
-              role: { select: { id: true, name: true, description: true } },
+          store: {
+            select: {
+              id: true,
+              name: true,
+              business_name: true,
+              ruc: true,
+              logo_url: true,
+              is_active: true,
+            },
+          },
+          role: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
             },
           },
         },
-      });
+      },
+    } as const;
 
-      // --- PASO B: Si NO existe el usuario, lo creamos junto con su tienda ---
-      if (!existingUser) {
-        logger.warn(
-          `[GET_USER] Usuario no encontrado. Creando registro on-the-fly...`,
-        );
-
-        const catalog = await getCatalogCache();
-
-        // --- SUB-PASO B1: Crear/Buscar Tienda ---
-        let targetStoreId: string | null = null;
-        if (store?.legacyStoreId) {
-          let foundStore = await tx.stores.findFirst({
-            where: { legacy_store_id: BigInt(store.legacyStoreId) },
-          });
-
-          if (!foundStore) {
-            logger.warn(
-              `[GET_USER] Tienda legacy ${store.legacyStoreId} no existe. Creándola...`,
-            );
-
-            const defaultCountryId = "55488c9d-95cd-11f1-b5bb-0efefcff1da7";
-
-            foundStore = await tx.stores.create({
-              data: {
-                legacy_store_id: BigInt(store.legacyStoreId),
-                name: `Tienda Legacy ${store.legacyStoreId}`,
-                currency_code: "PEN",
-                timezone: "America/Lima",
-                is_active: true,
-                country_id: defaultCountryId,
-                settings: {
-                  create: {
-                    company_prefix: `LEG-${store.legacyStoreId}`,
-                    currency_code: "PEN",
-                    timezone: "America/Lima",
-                  },
-                },
-              },
-            });
-          }
-          targetStoreId = foundStore.id;
-        }
-
-        // --- SUB-PASO B2: Crear Persona ---
-        const docTypeId = personPayload.documentType
-          ? catalog.docTypes[personPayload.documentType]
-          : undefined;
-        const ubigeoId = personPayload.ubigeoCode
-          ? catalog.ubigeos[personPayload.ubigeoCode]
-          : undefined;
-
-        let person = await tx.persons.create({
-          data: {
-            legacy_person_id: personPayload.legacyPersonId
-              ? BigInt(personPayload.legacyPersonId)
-              : null,
-            first_name: personPayload.firstName,
-            last_name: personPayload.lastName,
-            document_type_id: docTypeId || null,
-            document_number: personPayload.documentNumber,
-            ubigeo_id: ubigeoId || null,
-            address: personPayload.address || null,
-          },
-        });
-
-        // --- SUB-PASO B3: Crear Usuario ---
-        const newUser = await tx.users.create({
-          data: {
-            person_id: person.id,
-            email: userData.email,
-            cognito_sub: userData.cognitoSub,
-            is_active: userData.isActive ?? true,
-            last_login_at: userData.lastLoginAt
-              ? new Date(userData.lastLoginAt)
-              : null,
-          },
-        });
-
-        // --- SUB-PASO B4: Crear Membresía (si hay tienda) ---
-        // Usamos membership del payload original
-        const membership = store?.membership;
-
-        if (targetStoreId && membership) {
-          const roleId = catalog.roles[membership.roleName];
-          if (roleId) {
-            await tx.store_memberships.create({
-              data: {
-                user_id: newUser.id, // ✅ Usamos el ID del usuario recién creado
-                store_id: targetStoreId,
-                role_id: roleId,
-                is_owner: membership.isOwner ?? false,
-                is_active: membership.isActive ?? true,
-                employee_code: membership.employeeCode || null,
-                hire_date: membership.hireDate
-                  ? new Date(membership.hireDate)
-                  : null,
-              },
-            });
-          } else {
-            logger.warn(
-              `[GET_USER] Rol ${membership.roleId} no encontrado en catálogo`,
-            );
-          }
-        }
-      }
-
-      // --- PASO C: Recargar datos completos para la respuesta ---
-      return await tx.users.findFirst({
-        where: whereClause,
-        include: {
-          person: true,
-          memberships: {
-            where: { is_active: true },
-            include: {
-              store: {
-                select: {
-                  id: true,
-                  name: true,
-                  business_name: true,
-                  ruc: true,
-                  logo_url: true,
-                  is_active: true,
-                  settings: true,
-                },
-              },
-              role: { select: { id: true, name: true, description: true } },
-            },
-          },
-        },
-      });
+    let existingUser = await this.prisma.users.findFirst({
+      where: whereClause,
+      include: includeClause,
     });
 
-    if (!result) {
-      return { eventId, status: "NOT_FOUND" };
+    if (!existingUser) {
+      logger.warn(
+        `[GET_USER] Usuario no encontrado: ${userData.email || userData.cognitoSub}. Migrando en el momento (lazy migration)...`,
+      );
+
+      await this.handleCreateUser(payload);
+
+      existingUser = await this.prisma.users.findFirst({
+        where: whereClause,
+        include: includeClause,
+      });
+
+      if (!existingUser) {
+        logger.error(
+          `[GET_USER] La migración en el momento no pudo crear al usuario: ${userData.email || userData.cognitoSub}`,
+        );
+        return { eventId, status: "NOT_FOUND" };
+      }
+
+      logger.info(
+        `[GET_USER] Usuario migrado en el momento con éxito: ${userData.email || userData.cognitoSub}`,
+      );
     }
 
     // Construcción de respuesta tipada
-    const personData = result.person;
-    const membership = result.memberships[0];
+    const personData = existingUser.person;
 
     return {
       eventId,
       status: "SUCCESS",
       data: {
         user: {
-          id: result.id,
-          email: result.email,
-          cognitoSub: result.cognito_sub || "",
-          isActive: result.is_active ?? true,
-          lastLoginAt: result.last_login_at || undefined,
+          id: existingUser.id,
+          email: existingUser.email,
+          cognitoSub: existingUser.cognito_sub || "",
+          isActive: existingUser.is_active ?? true,
+          lastLoginAt: existingUser.last_login_at || undefined,
         },
         person: personData
           ? {
@@ -660,41 +623,26 @@ export class SqsMigrationUseCase {
               address: personData.address || undefined,
             }
           : null,
-        store: membership?.store
-          ? {
-              id: membership.store.id,
-              name: membership.store.name,
-              businessName: membership.store.business_name || undefined,
-              ruc: membership.store.ruc || undefined,
-              logoUrl: membership.store.logo_url || undefined,
-              isActive: membership.store.is_active ?? true,
-              settings: membership.store.settings || undefined,
-            }
-          : undefined,
-        memberships: membership
-          ? [
-              {
-                id: membership.id,
-                store: {
-                  id: membership.store?.id || "",
-                  name: membership.store?.name || "",
-                  businessName: membership.store?.business_name || undefined,
-                  ruc: membership.store?.ruc || undefined,
-                  logoUrl: membership.store?.logo_url || undefined,
-                  isActive: membership.store?.is_active ?? true,
-                },
-                role: {
-                  id: membership.role?.id || "",
-                  name: membership.role?.name || "",
-                  description: membership.role?.description || undefined,
-                },
-                isOwner: membership.is_owner,
-                employeeCode: membership.employee_code || undefined,
-                hireDate: membership.hire_date || undefined,
-                isActive: membership.is_active ?? true,
-              },
-            ]
-          : [],
+        memberships: (existingUser.memberships || []).map((m: any) => ({
+          id: m.id,
+          store: {
+            id: m.store?.id || "",
+            name: m.store?.name || "",
+            businessName: m.store?.business_name || undefined,
+            ruc: m.store?.ruc || undefined,
+            logoUrl: m.store?.logo_url || undefined,
+            isActive: m.store?.is_active ?? true,
+          },
+          role: {
+            id: m.role?.id || "",
+            name: m.role?.name || "",
+            description: m.role?.description || undefined,
+          },
+          isOwner: m.is_owner,
+          employeeCode: m.employee_code || undefined,
+          hireDate: m.hire_date || undefined,
+          isActive: m.is_active ?? true,
+        })),
       },
     };
   }
@@ -724,16 +672,25 @@ export class SqsMigrationUseCase {
           `[STORE_SETTINGS] Tienda legacy ${store.legacyStoreId} no encontrada. Creándola...`,
         );
 
+        // País por defecto: Perú, resuelto desde el catálogo real (mismo criterio que CREATE_USER).
+        const defaultCountryId = catalog.countries["PER"];
+        if (!defaultCountryId) {
+          throw new Error(
+            `[STORE_SETTINGS] País por defecto "PER" no encontrado en catálogo.`,
+          );
+        }
+
         storeRecord = await tx.stores.create({
           data: {
             legacy_store_id: BigInt(store.legacyStoreId!),
-            name: store.name || `Tienda Legacy ${store.legacyStoreId}`,
+            name: store.name,
             business_name: store.businessName || null,
             ruc: store.ruc || null,
             logo_url: store.logoUrl || null,
             is_active: store.isActive ?? true,
             currency_code: "PEN", // Default seguro
             timezone: "America/Lima",
+            country_id: defaultCountryId,
           },
         });
       }
@@ -744,14 +701,16 @@ export class SqsMigrationUseCase {
           `[STORE_SETTINGS] Actualizando/Creando settings para store_id: ${storeRecord.id}`,
         );
 
+        const settingsData = this.buildStoreSettingsData(store.settings);
+
         await tx.store_settings.upsert({
           where: { store_id: storeRecord.id },
           create: {
             store_id: storeRecord.id,
-            ...store.settings,
+            ...settingsData,
           },
           update: {
-            ...store.settings,
+            ...settingsData,
           },
         });
       }

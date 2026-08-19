@@ -44,3 +44,4 @@ coverage/
 
 # AWS
 .aws-sam/
+.claude

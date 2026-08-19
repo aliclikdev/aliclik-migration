@@ -8,18 +8,16 @@ datasource db {
   url      = env("AURORA_DATABASE_URL")
 }
 
-// ==================== CATÁLOGOS ====================
-
 model DocumentType {
-  id            String   @id @default(uuid()) @db.Char(36)
-  code          String   @unique(map: "code") @db.VarChar(20)
-  name          String   @db.VarChar(50)
-  country_id    String?  @db.Char(36)
-  description   String?  @db.Text
-  regex_pattern String?  @db.VarChar(100)
-  is_active     Boolean  @default(true)
-  created_at    DateTime @default(now()) @db.Timestamp(0)
-  updated_at    DateTime @default(now()) @updatedAt @db.Timestamp(0)
+  id            String    @id @default(uuid()) @db.Char(36)
+  code          String    @unique(map: "code") @db.VarChar(20)
+  name          String    @db.VarChar(50)
+  country_id    String?   @db.Char(36)
+  description   String?   @db.Text
+  regex_pattern String?   @db.VarChar(100)
+  is_active     Boolean   @default(true)
+  created_at    DateTime  @default(now()) @db.Timestamp(0)
+  updated_at    DateTime  @default(now()) @updatedAt @db.Timestamp(0)
   persons       persons[]
 
   @@map("document_types")
@@ -53,7 +51,7 @@ model Ubigeo {
 
 model stores {
   id                     String                   @id @default(uuid()) @db.Char(36)
-  legacy_store_id        BigInt?                  @db.BigInt
+  legacy_store_id        BigInt?
   name                   String                   @db.VarChar(255)
   business_name          String?                  @db.VarChar(255)
   ruc                    String?                  @db.VarChar(20)
@@ -77,13 +75,12 @@ model stores {
   products               products[]
   skus                   skus[]
   memberships            store_memberships[]
+  settings               store_settings?
   countries              countries?               @relation(fields: [country_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "stores_ibfk_1")
   ubigeos                Ubigeo?                  @relation(fields: [ubigeo_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "stores_ibfk_2")
   wallets                wallets[]
   warehouse_skus         warehouse_skus[]
   warehouses             warehouses[]
-  // ✅ Agrega esta línea para completar la relación bidireccional
-  settings          store_settings? 
 
   @@unique([ruc, country_id], map: "idx_store_fiscal_unique")
   @@index([country_id, is_active], map: "idx_store_by_country")
@@ -92,11 +89,11 @@ model stores {
 }
 
 model roles {
-  id               String             @id @default(uuid()) @db.Char(36)
-  name             String             @unique(map: "name") @db.VarChar(50)
-  description      String?            @db.VarChar(255)
-  is_active        Boolean?           @default(true)
-  created_at       DateTime?          @db.Timestamp(0)
+  id               String              @id @default(uuid()) @db.Char(36)
+  name             String              @unique(map: "name") @db.VarChar(50)
+  description      String?             @db.VarChar(255)
+  is_active        Boolean?            @default(true)
+  created_at       DateTime?           @db.Timestamp(0)
   role_permissions role_permissions[]
   memberships      store_memberships[]
 
@@ -120,10 +117,9 @@ model users {
   motorized_liquidation_evidences                               motorized_liquidation_evidences[]
   order_status_history                                          order_status_history[]
   memberships                                                   store_memberships[]
+  acceptances                                                   user_terms_acceptances[]
   person                                                        persons?                          @relation(fields: [person_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_ibfk_1")
   wallet_transactions                                           wallet_transactions[]
-  acceptances   user_terms_acceptances[] 
-
 
   @@index([person_id], map: "person_id")
   @@map("users")
@@ -151,29 +147,25 @@ model store_memberships {
   @@map("store_memberships")
 }
 
-// ==================== IDEMPOTENCIA ====================
-
 model Idempotency {
   id              BigInt   @id @default(autoincrement())
   idempotency_key String   @unique(map: "idempotency_key_key") @db.VarChar(255)
   status          String   @default("PROCESSED") @db.VarChar(30)
-  processed_at    DateTime @default(now()) @db.DateTime(3)
+  processed_at    DateTime @default(now())
   metadata        Json?
-  created_at      DateTime @default(now()) @db.DateTime(3)
+  created_at      DateTime @default(now())
 
   @@index([status, created_at], map: "idempotency_status_createdAt_idx")
   @@map("idempotency")
 }
 
-// ==================== ENTIDADES DEL NEGOCIO ====================
-
 model persons {
   id                     String                   @id @default(uuid()) @db.Char(36)
-  legacy_person_id       BigInt?                  @db.BigInt
-  first_name             String?                   @db.VarChar(100)
-  last_name              String?                   @db.VarChar(100)
+  legacy_person_id       BigInt?
+  first_name             String?                  @db.VarChar(100)
+  last_name              String?                  @db.VarChar(100)
   document_type_id       String?                  @db.Char(36)
-  document_number        String?                   @unique(map: "document_number") @db.VarChar(20)
+  document_number        String?                  @unique(map: "document_number") @db.VarChar(20)
   birth_date             DateTime?                @db.Date
   ubigeo_id              String?                  @db.Char(36)
   address                String?                  @db.Text
@@ -237,7 +229,7 @@ model countries {
   stores          stores[]
   ubigeos         Ubigeo[]
   ubigeos_levels  ubigeos_levels[]
-  
+
   @@map("countries")
 }
 
@@ -263,7 +255,7 @@ model courier_coverages {
 
 model couriers {
   id                            String                          @id @default(uuid()) @db.Char(36)
-  legacy_transporter_id         BigInt?                         @db.BigInt
+  legacy_transporter_id         BigInt?
   name                          String                          @db.VarChar(255)
   country_id                    String?                         @db.Char(36)
   ubigeo_id                     String?                         @db.Char(36)
@@ -312,7 +304,7 @@ model customer_addresses {
 
 model customers {
   id                 String               @id @default(uuid()) @db.Char(36)
-  legacy_customer_id BigInt?              @db.BigInt
+  legacy_customer_id BigInt?
   store_id           String?              @db.Char(36)
   person_id          String?              @db.Char(36)
   email              String?              @db.VarChar(255)
@@ -847,7 +839,7 @@ model order_statuses {
 
 model orders {
   id                            String                          @id @default(uuid()) @db.Char(36)
-  legacy_order_id               BigInt?                         @db.BigInt
+  legacy_order_id               BigInt?
   store_id                      String?                         @db.Char(36)
   customer_id                   String?                         @db.Char(36)
   warehouse_id                  String?                         @db.Char(36)
@@ -970,7 +962,7 @@ model product_variants {
 
 model products {
   id                String             @id @default(uuid()) @db.Char(36)
-  legacy_product_id BigInt?            @db.BigInt
+  legacy_product_id BigInt?
   store_id          String?            @db.Char(36)
   category_id       String?            @db.Char(36)
   catalog_id        String?            @db.Char(36)
@@ -1027,7 +1019,7 @@ model sku_variant_options {
 
 model skus {
   id                  String                @id @default(uuid()) @db.Char(36)
-  legacy_sku_id       BigInt?               @db.BigInt
+  legacy_sku_id       BigInt?
   store_id            String?               @db.Char(36)
   product_id          String?               @db.Char(36)
   sku_code            String                @db.VarChar(50)
@@ -1147,7 +1139,7 @@ model wallets {
 
 model warehouse_skus {
   id                      String      @id @default(uuid()) @db.Char(36)
-  legacy_warehouse_sku_id BigInt?     @db.BigInt
+  legacy_warehouse_sku_id BigInt?
   store_id                String?     @db.Char(36)
   sku_id                  String?     @db.Char(36)
   warehouse_id            String?     @db.Char(36)
@@ -1168,7 +1160,7 @@ model warehouse_skus {
 model warehouses {
   id             String           @id @default(uuid()) @db.Char(36)
   store_id       String?          @db.Char(36)
-  legacy_id      BigInt?          @db.BigInt
+  legacy_id      BigInt?
   name           String?          @db.VarChar(255)
   address        String?          @db.Text
   is_active      Boolean?         @default(true)
@@ -1185,66 +1177,51 @@ model warehouses {
 }
 
 model terms_conditions {
-  id          String    @id @default(uuid()) @db.Char(36)
-  title       String   @db.VarChar(255)
-  description String?  @db.Text
-  content     String   @db.LongText
-  role        String?  @db.VarChar(50) // Ej: 'ADMIN_STORE', 'SELLER' (o usar Enum si prefieres)
-  version     Int      @default(1)
-  is_active   Boolean  @default(true)
-  created_at  DateTime @default(now()) @db.Timestamp(0)
-  updated_at  DateTime @updatedAt @db.Timestamp(0)
-
-  // Relación con aceptaciones
+  id          String                   @id @default(uuid()) @db.Char(36)
+  title       String                   @db.VarChar(255)
+  content     String                   @db.LongText
+  version     Int                      @default(1)
+  is_active   Boolean                  @default(true)
+  created_at  DateTime                 @default(now()) @db.Timestamp(0)
+  updated_at  DateTime                 @updatedAt @db.Timestamp(0)
+  description String?                  @db.Text
+  role        String?                  @db.VarChar(50)
   acceptances user_terms_acceptances[]
 
   @@map("terms_conditions")
 }
 
 model user_terms_acceptances {
-  id           Int      @id @default(autoincrement())
-  user_id      String   @db.Char(36) // Asumiendo UUID como en users.id
-  terms_id     String   @db.Char(36)
-  
-  accepted_at  DateTime @default(now()) @db.Timestamp(0)
-  ip_address   String?  @db.VarChar(45)
-  user_agent   String?  @db.Text
-  
-  // Relaciones
-  user         users                      @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  terms        terms_conditions       @relation(fields: [terms_id], references: [id], onDelete: Cascade)
+  id          Int              @id @default(autoincrement())
+  user_id     String           @db.Char(36)
+  terms_id    String           @db.Char(36)
+  accepted_at DateTime         @default(now()) @db.Timestamp(0)
+  ip_address  String?          @db.VarChar(45)
+  user_agent  String?          @db.Text
+  terms       terms_conditions @relation(fields: [terms_id], references: [id], onDelete: Cascade)
+  user        users            @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  @@unique([user_id, terms_id]) // Un usuario solo puede aceptar una versión específica una vez
+  @@unique([user_id, terms_id])
   @@index([user_id])
   @@index([terms_id])
   @@map("user_terms_acceptances")
 }
 
 model store_settings {
-  id                String   @id @default(uuid())
-  store_id          String   @unique
-  
-  // Configuración Operativa Básica
-  company_prefix    String?  @db.VarChar(20)
-  currency_code     String   @default("PEN") @db.Char(3)
-  timezone          String?  @default("America/Lima") @db.VarChar(50)
-
-  // Configuración Logística por Defecto
-  default_shipping_cost Decimal? @default(0.00) @db.Decimal(12, 2)
-  motorized_workload_limit Int?         @default(25)
-
-  // Configuración de Notificaciones y Soporte
-  support_phone       String?  @db.VarChar(50)
-  support_email       String?  @db.VarChar(255)
-  is_email_transfer_verified Boolean @default(false)
-
-  // Metadatos y Control
-  config            Json?    
-  created_at        DateTime @default(now())
-  updated_at        DateTime @updatedAt
-
-  // Relaciones
-  store             stores   @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  id                         String   @id @default(uuid())
+  store_id                   String   @unique
+  company_prefix             String?  @db.VarChar(20)
+  currency_code              String   @default("PEN") @db.Char(3)
+  timezone                   String?  @default("America/Lima") @db.VarChar(50)
+  default_shipping_cost      Decimal? @default(0.00) @db.Decimal(12, 2)
+  motorized_workload_limit   Int?     @default(25)
+  support_phone              String?  @db.VarChar(50)
+  support_email              String?  @db.VarChar(255)
+  is_email_transfer_verified Boolean  @default(false)
+  config                     Json?
+  created_at                 DateTime @default(now())
+  updated_at                 DateTime @updatedAt
+  store                      stores   @relation(fields: [store_id], references: [id], onDelete: Cascade)
 
   @@index([store_id])
   @@map("store_settings")
