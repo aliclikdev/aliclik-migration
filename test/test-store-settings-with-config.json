@@ -12,7 +12,6 @@
     "logoUrl": "https://s3.amazonaws.com/bucket/logo.png",
     "isActive": true,
     "settings": {
-      "companyPrefix": "ALC",
       "currencyCode": "PEN",
       "timezone": "America/Lima",
       "supportPhone": "+51987654321",
@@ -26,7 +25,7 @@
           "requireSignature": false
         },
         "customFields": {
-          "regionCode": "LIMA-NORTE",
+          "regionCode": "LIMA-SUR",
           "priorityLevel": "HIGH"
         }
       },

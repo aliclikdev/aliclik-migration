@@ -18,7 +18,6 @@ export class SqsMigrationUseCase {
     settings: NonNullable<StoreWithDetails["settings"]>,
   ) {
     return {
-      company_prefix: settings.companyPrefix,
       currency_code: settings.currencyCode,
       timezone: settings.timezone,
       config: settings.config,
