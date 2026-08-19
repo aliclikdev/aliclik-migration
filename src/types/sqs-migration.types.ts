@@ -52,7 +52,7 @@ export interface UserMigrationMessage {
     lastName: string;
     documentType?: "DNI" | "RUC" | "CE" | "PASSPORT";
     birthDate?: Date | null | undefined;
-    documentNumber: string;
+    documentNumber?: string;
     ubigeoCode?: string;
     address?: string;
   };
@@ -80,6 +80,27 @@ export interface UserMigrationMessage {
     | undefined;
 }
 
+export interface StoreMembershipDetails {
+  id: string;
+  store: {
+    id: string;
+    name: string;
+    businessName?: string;
+    ruc?: string;
+    logoUrl?: string;
+    isActive: boolean;
+  };
+  role: {
+    id: string;
+    name: string;
+    description?: string;
+  };
+  isOwner: boolean;
+  employeeCode?: string;
+  hireDate?: Date;
+  isActive: boolean;
+}
+
 export interface UserMigrationResponse {
   eventId: string;
   status: "SUCCESS" | "ALREADY_PROCESSED" | "NOT_FOUND";
@@ -104,8 +125,7 @@ export interface UserMigrationResponse {
       | null
       | undefined;
 
-    // Respuesta también refleja la nueva estructura anidada
-    store: StoreWithDetails | null | undefined;
+    memberships: StoreMembershipDetails[];
 
     termsStatus?:
       | {

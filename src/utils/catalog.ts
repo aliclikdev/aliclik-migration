@@ -5,6 +5,7 @@ export interface CatalogCache {
   ubigeos: Record<string, string>;       // { '150101': 'uuid-789' }
   stores: Record<string, string>;        // { '65921': 'uuid-abc' }
   roles: Record<string, string>;         // { 'ADMIN_STORE': 'uuid-def' }
+  countries: Record<string, string>;     // { 'PER': 'uuid-ghi' }
 }
 
 let CATALOG_CACHE: CatalogCache | null = null;
@@ -24,7 +25,7 @@ export async function getCatalogCache(): Promise<CatalogCache> {
 
   try {
     // Ejecutamos todas las consultas en paralelo
-    const [docTypes, ubigeos, stores, roles] = await Promise.all([
+    const [docTypes, ubigeos, stores, roles, countries] = await Promise.all([
       // 1. Tipos de documento
       db.$queryRaw<Array<{ id: string; code: string }>>`
         SELECT id, code FROM document_types
@@ -44,6 +45,10 @@ export async function getCatalogCache(): Promise<CatalogCache> {
       // 4. Roles
       db.$queryRaw<Array<{ id: string; name: string }>>`
         SELECT id, name FROM roles
+      `,
+
+      db.$queryRaw<Array<{ id: string; iso_code: string }>>`
+        SELECT id, iso_code FROM countries
       `,
     ]);
 
@@ -68,6 +73,11 @@ export async function getCatalogCache(): Promise<CatalogCache> {
       roles: Object.fromEntries(
         roles.map((r) => [r.name, r.id])
       ),
+
+      // { 'PER': 'uuid-ghi' }
+      countries: Object.fromEntries(
+        countries.map((c) => [c.iso_code, c.id])
+      ),
     };
 
     console.log('✅ Catálogos cargados:', {
@@ -75,6 +85,7 @@ export async function getCatalogCache(): Promise<CatalogCache> {
       ubigeos: Object.keys(CATALOG_CACHE.ubigeos).length,
       stores: Object.keys(CATALOG_CACHE.stores).length,
       roles: Object.keys(CATALOG_CACHE.roles).length,
+      countries: Object.keys(CATALOG_CACHE.countries).length,
     });
 
     return CATALOG_CACHE;
