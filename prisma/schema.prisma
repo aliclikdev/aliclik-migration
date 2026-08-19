@@ -1215,8 +1215,6 @@ model store_settings {
   company_prefix             String?  @db.VarChar(20)
   currency_code              String   @default("PEN") @db.Char(3)
   timezone                   String?  @default("America/Lima") @db.VarChar(50)
-  default_shipping_cost      Decimal? @default(0.00) @db.Decimal(12, 2)
-  motorized_workload_limit   Int?     @default(25)
   support_phone              String?  @db.VarChar(50)
   support_email              String?  @db.VarChar(255)
   is_email_transfer_verified Boolean  @default(false)
