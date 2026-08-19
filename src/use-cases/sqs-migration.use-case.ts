@@ -21,11 +21,11 @@ export class SqsMigrationUseCase {
       company_prefix: settings.companyPrefix,
       currency_code: settings.currencyCode,
       timezone: settings.timezone,
-      default_shipping_cost: settings.defaultShippingCost,
-      motorized_workload_limit: 0,
+      config: settings.config,
       support_phone: settings.supportPhone,
       support_email: settings.supportEmail,
       is_email_transfer_verified: settings.isEmailTransferVerified,
+      account_verified: settings.accountVerified,
     };
   }
 
@@ -137,7 +137,7 @@ export class SqsMigrationUseCase {
       ? catalog.ubigeos[personData.ubigeoCode]
       : undefined;
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: any) => {
       // --- PASO A: Persona ---
       let person = personData.documentNumber
         ? await tx.persons.findUnique({
@@ -310,7 +310,7 @@ export class SqsMigrationUseCase {
       );
     }
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: any) => {
       // 1. Buscar usuario base
       let user = await tx.users.findFirst({
         where: { OR: userConditions },
@@ -451,7 +451,7 @@ export class SqsMigrationUseCase {
       return;
     }
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: any) => {
       // 1. Buscar usuario con sus relaciones críticas
       const user = await tx.users.findFirst({
         where: { OR: userConditions },
@@ -661,7 +661,7 @@ export class SqsMigrationUseCase {
       `[STORE_SETTINGS] Procesando configuración para tienda legacy: ${store.legacyStoreId}`,
     );
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: any) => {
       // 1. Buscar o Crear Tienda
       let storeRecord = await tx.stores.findFirst({
         where: { legacy_store_id: BigInt(store.legacyStoreId!) },
@@ -672,7 +672,6 @@ export class SqsMigrationUseCase {
           `[STORE_SETTINGS] Tienda legacy ${store.legacyStoreId} no encontrada. Creándola...`,
         );
 
-        // País por defecto: Perú, resuelto desde el catálogo real (mismo criterio que CREATE_USER).
         const defaultCountryId = catalog.countries["PER"];
         if (!defaultCountryId) {
           throw new Error(
@@ -683,19 +682,19 @@ export class SqsMigrationUseCase {
         storeRecord = await tx.stores.create({
           data: {
             legacy_store_id: BigInt(store.legacyStoreId!),
-            name: store.name,
+            name: store.name || `Tienda Legacy ${store.legacyStoreId}`, // Fallback seguro
             business_name: store.businessName || null,
             ruc: store.ruc || null,
             logo_url: store.logoUrl || null,
             is_active: store.isActive ?? true,
-            currency_code: "PEN", // Default seguro
+            currency_code: "PEN",
             timezone: "America/Lima",
             country_id: defaultCountryId,
           },
         });
       }
 
-      // 2. Upsert de Settings
+      // 2. Upsert de Settings (solo si hay settings en el payload)
       if (store.settings) {
         logger.info(
           `[STORE_SETTINGS] Actualizando/Creando settings para store_id: ${storeRecord.id}`,

@@ -81,6 +81,7 @@ model stores {
   wallets                wallets[]
   warehouse_skus         warehouse_skus[]
   warehouses             warehouses[]
+  bankAccounts           bank_accounts[]          @relation("StoreBankAccounts", map: "store_bank_accounts")
 
   @@unique([ruc, country_id], map: "idx_store_fiscal_unique")
   @@index([country_id, is_active], map: "idx_store_by_country")
@@ -1171,6 +1172,7 @@ model warehouses {
   orders         orders[]
   warehouse_skus warehouse_skus[]
   stores         stores?          @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "warehouses_ibfk_1")
+  bankAccounts   bank_accounts[]  @relation("WarehouseBankAccounts", map: "warehouse_bank_accounts")
 
   @@index([store_id], map: "idx_warehouse_by_store")
   @@index([store_id, is_active], map: "idx_warehouse_by_store_active")
@@ -1219,10 +1221,59 @@ model store_settings {
   support_email              String?  @db.VarChar(255)
   is_email_transfer_verified Boolean  @default(false)
   config                     Json?
+  account_verified           Boolean  @default(false)
   created_at                 DateTime @default(now())
   updated_at                 DateTime @updatedAt
   store                      stores   @relation(fields: [store_id], references: [id], onDelete: Cascade)
 
   @@index([store_id])
   @@map("store_settings")
+}
+
+model account_types {
+  id          String  @id @default(uuid()) @db.Char(36)
+  code        String  @unique @db.VarChar(20)
+  label       String  @db.VarChar(100)
+  description String? @db.Text
+  is_active   Boolean @default(true)
+
+  bankAccounts bank_accounts[]
+
+  @@map("account_types")
+}
+
+model bank_accounts {
+  id String @id @default(uuid()) @db.Char(36)
+
+  // Relación polimórfica simulada mediante FK explícita a la entidad dueña
+  owner_type String  @db.VarChar(20) // STORE, WAREHOUSE, PERSON
+  owner_id   String? @db.Char(36)
+
+  bank_code      String  @db.VarChar(50)
+  account_number String  @db.VarChar(100)
+  cci            String? @db.VarChar(20)
+
+  account_type_id String @db.Char(36)
+
+  currency_code     String  @default("PEN") @db.Char(3)
+  holder_name       String  @db.VarChar(255)
+  holder_doc_type   String? @db.VarChar(20)
+  holder_doc_number String? @db.VarChar(50)
+
+  is_primary Boolean @default(false)
+  is_active  Boolean @default(true)
+
+  created_at DateTime @default(now()) @db.Timestamp(0)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamp(0)
+
+  // Relaciones inversas EXPLÍCITAS con nombres únicos
+  store     stores?     @relation("StoreBankAccounts", fields: [owner_id], references: [id], map: "bank_accounts_store_fkey")
+  warehouse warehouses? @relation("WarehouseBankAccounts", fields: [owner_id], references: [id], map: "bank_accounts_warehouse_fkey")
+
+  // Relación hacia account_types (si existe)
+  accountType account_types? @relation(fields: [account_type_id], references: [id], map: "bank_accounts_account_type_fkey")
+
+  @@index([owner_type, owner_id])
+  @@index([bank_code, account_number])
+  @@map("bank_accounts")
 }

@@ -21,11 +21,11 @@ export interface StoreWithDetails {
     companyPrefix?: string;
     currencyCode?: string;
     timezone?: string;
-    defaultShippingCost?: number;
-    motorizedWorkloadLimit?: number;
     supportPhone?: string | null | undefined;
+    config?: object | null | null;
     supportEmail?: string;
     isEmailTransferVerified?: boolean;
+    accountVerified?: boolean;
   };
 
   // Membresía del usuario en esta tienda específica

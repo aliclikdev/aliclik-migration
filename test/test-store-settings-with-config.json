@@ -1,0 +1,38 @@
+{
+  "eventId": "evt-store-settings-20260819-test",
+  "eventType": "STORE_SETTINGS",
+  "timestamp": "2026-08-19T16:00:00.000Z",
+  "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "store": {
+    "id": "uuid-store-abc-123",
+    "name": "Tienda Principal",
+    "legacyStoreId": 65921,
+    "businessName": "Comercializadora XYZ SAC",
+    "ruc": "20123456789",
+    "logoUrl": "https://s3.amazonaws.com/bucket/logo.png",
+    "isActive": true,
+    "settings": {
+      "companyPrefix": "ALC",
+      "currencyCode": "PEN",
+      "timezone": "America/Lima",
+      "supportPhone": "+51987654321",
+      "config": {
+        "thresholds": {
+          "minOrderAmount": 50,
+          "maxCreditLimit": 5000
+        },
+        "flags": {
+          "enableExpressDelivery": true,
+          "requireSignature": false
+        },
+        "customFields": {
+          "regionCode": "LIMA-NORTE",
+          "priorityLevel": "HIGH"
+        }
+      },
+      "supportEmail": "soporte@tienda.com",
+      "isEmailTransferVerified": true,
+      "accountVerified": false
+    }
+  }
+}
