@@ -62,7 +62,7 @@ package:
 
 functions:
   processSqsMigration:
-    handler: src/handlers/processSqsMigration.handler
+    handler: src/sqs/processSqsMigration.handler
     vpc:
       securityGroupIds:
         - ${env:AURORA_SECURITY_GROUP_ID}
