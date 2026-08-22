@@ -4,7 +4,8 @@ export type MigrationEventType =
   | "DELETE_USER"
   | "GET_USER"
   | "ACCEPT_TERMS"
-  | "STORE_SETTINGS";
+  | "STORE_SETTINGS"
+  | "CREATE_PRODUCT";
 
 // Estructura anidada para la tienda
 export interface StoreWithDetails {
@@ -139,3 +140,91 @@ export interface UserMigrationResponse {
       | undefined;
   };
 }
+//todo: productos
+export type ProductMigrationEventType = "CREATE_PRODUCT";
+
+
+export interface ProductCategoryPayload {
+  id?: string;
+  name?: string;
+  parentId?: string | null;
+  isActive?: boolean;
+}
+
+export interface ProductCatalogPayload {
+  id?: string;
+  name?: string;
+  isPublic?: boolean;
+}
+
+export interface ProductImagePayload {
+  url: string;
+  title?: string;
+  altText?: string;
+  position?: number;
+  isPrimary?: boolean;
+  imageType?: string; // default 'PRODUCT'
+  width?: number;
+  height?: number;
+  fileSize?: number;
+  mimeType?: string;
+  isActive?: boolean;
+}
+
+export interface SkuPayload {
+  legacySkuId?: number;
+  skuCode: string;
+  ean?: string;
+  regularPrice: number;
+  salesPrice: number;
+  purchasePrice: number;
+  dropPrice?: number;
+  heightCm?: number;
+  widthCm?: number;
+  lengthCm?: number;
+  weightKg?: number;
+  stockMin?: number;
+  stockMax?: number;
+  trackStock?: boolean;
+  allowBackorder?: boolean;
+  isActive?: boolean;
+}
+
+export interface ProductPayload {
+  legacyProductId?: number;
+  storeLegacyId: number;
+  category?: ProductCategoryPayload | null;
+  catalog?: ProductCatalogPayload | null;
+  name: string;
+  shortDescription?: string;
+  largeDescription?: string;
+  description?: string;
+  urlImage?: string;
+  urlReference?: string;
+  isProductGlobal?: boolean;
+  salePriceDrop?: number;
+  priceDropCrate?: number;
+  priceDropDozen?: number;
+  retailPriceSuggested?: number;
+  unitsCrate?: number;
+  isNovelty?: boolean;
+  isLargeVolume?: boolean;
+  isValidate?: boolean;
+  isRegisteredProduct?: boolean;
+  statusCode?: string; // code de product_statuses (ej: 'ACTIVE')
+  isActive?: boolean;
+}
+
+export interface ProductMigrationMessage {
+  eventId: string;
+  eventType: ProductMigrationEventType;
+  timestamp: string;
+  sourceSystem: "ALICLIK_LEGACY_HEROKU";
+  replyToQueueUrl?: string;
+  product: ProductPayload;
+  skus: SkuPayload[];
+  images?: ProductImagePayload[];
+}
+
+// Tipo unión que consume el entrypoint SQS y el use case.
+export type SqsMigrationMessage = UserMigrationMessage | ProductMigrationMessage;

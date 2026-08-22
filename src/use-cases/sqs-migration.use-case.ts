@@ -2,6 +2,8 @@
 import { PrismaClient } from "@prisma/client";
 import { IdempotencyService } from "../services/idempotency.service";
 import {
+  ProductMigrationMessage,
+  SqsMigrationMessage,
   UserMigrationMessage,
   UserMigrationResponse,
 } from "../types/sqs-migration.types";
@@ -13,6 +15,7 @@ import { UpdateUserHandler } from "./handlers/users/update-user.handler";
 import { DeleteUserHandler } from "./handlers/users/delete-user.handler";
 import { GetUserHandler } from "./handlers/users/get-user.handler";
 import { StoreSettingsHandler } from "./handlers/stores/store-settings.handler";
+import { CreateProductHandler } from "./handlers/products/create-product.handler";
 
 export class SqsMigrationUseCase {
   private readonly createUser: CreateUserHandler;
@@ -20,6 +23,7 @@ export class SqsMigrationUseCase {
   private readonly deleteUser: DeleteUserHandler;
   private readonly getUser: GetUserHandler;
   private readonly storeSettings: StoreSettingsHandler;
+  private readonly createProduct: CreateProductHandler;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -31,10 +35,11 @@ export class SqsMigrationUseCase {
     this.deleteUser = new DeleteUserHandler(this.prisma);
     this.getUser = new GetUserHandler(this.prisma, this.createUser);
     this.storeSettings = new StoreSettingsHandler(this.prisma);
+    this.createProduct = new CreateProductHandler(this.prisma);
   }
 
   async execute(
-    payload: UserMigrationMessage,
+    payload: SqsMigrationMessage,
   ): Promise<UserMigrationResponse | void> {
     const { eventId, eventType } = payload;
     logger.info(
@@ -47,6 +52,7 @@ export class SqsMigrationUseCase {
       "DELETE_USER",
       "ACCEPT_TERMS",
       "STORE_SETTINGS",
+      "CREATE_PRODUCT",
     ].includes(eventType);
     let lockAcquired = false;
 
@@ -63,21 +69,27 @@ export class SqsMigrationUseCase {
     try {
       let result: UserMigrationResponse | void = undefined;
 
+      const userPayload = payload as UserMigrationMessage;
+      const productPayload = payload as ProductMigrationMessage;
+
       switch (eventType) {
         case "CREATE_USER":
-          await this.createUser.execute(payload);
+          await this.createUser.execute(userPayload);
           break;
         case "UPDATE_USER":
-          await this.updateUser.execute(payload);
+          await this.updateUser.execute(userPayload);
           break;
         case "DELETE_USER":
-          await this.deleteUser.execute(payload);
+          await this.deleteUser.execute(userPayload);
           break;
         case "GET_USER":
-          result = await this.getUser.execute(payload);
+          result = await this.getUser.execute(userPayload);
           break;
         case "STORE_SETTINGS":
-          await this.storeSettings.execute(payload);
+          await this.storeSettings.execute(userPayload);
+          break;
+        case "CREATE_PRODUCT":
+          await this.createProduct.execute(productPayload);
           break;
         default:
           logger.warn(

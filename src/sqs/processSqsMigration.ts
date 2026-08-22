@@ -4,7 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { SqsMigrationUseCase } from "../use-cases/sqs-migration.use-case";
 import { IdempotencyService } from "../services/idempotency.service";
 import { SqsReplyService } from "../services/sqs-reply.service";
-import { UserMigrationMessage } from "../types/sqs-migration.types";
+import { SqsMigrationMessage } from "../types/sqs-migration.types";
 import { logger } from "../utils/logger";
 import { randomUUID } from "crypto";
 
@@ -18,7 +18,7 @@ export const handler: SQSHandler = async (event) => {
   for (const record of event.Records) {
     try {
       // Parseamos el payload y aseguramos un eventId único combinando el messageId de SQS
-      const payload: UserMigrationMessage = JSON.parse(record.body);
+      const payload: SqsMigrationMessage = JSON.parse(record.body);
       payload.eventId =
         `${payload.eventId}-${randomUUID()}` || record.messageId;
 

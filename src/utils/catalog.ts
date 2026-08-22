@@ -1,11 +1,12 @@
 import { getAuroraDb } from '../services/aurora.service';
 
 export interface CatalogCache {
-  docTypes: Record<string, string>;      // { 'DNI': 'uuid-123', 'RUC': 'uuid-456' }
-  ubigeos: Record<string, string>;       // { '150101': 'uuid-789' }
-  stores: Record<string, string>;        // { '65921': 'uuid-abc' }
-  roles: Record<string, string>;         // { 'ADMIN_STORE': 'uuid-def' }
-  countries: Record<string, string>;     // { 'PER': 'uuid-ghi' }
+  docTypes: Record<string, string>;        // { 'DNI': 'uuid-123', 'RUC': 'uuid-456' }
+  ubigeos: Record<string, string>;         // { '150101': 'uuid-789' }
+  stores: Record<string, string>;          // { '65921': 'uuid-abc' }
+  roles: Record<string, string>;           // { 'ADMIN_STORE': 'uuid-def' }
+  countries: Record<string, string>;       // { 'PER': 'uuid-ghi' }
+  productStatuses: Record<string, string>; // { 'ACTIVE': 'uuid-jkl' }
 }
 
 let CATALOG_CACHE: CatalogCache | null = null;
@@ -25,7 +26,7 @@ export async function getCatalogCache(): Promise<CatalogCache> {
 
   try {
     // Ejecutamos todas las consultas en paralelo
-    const [docTypes, ubigeos, stores, roles, countries] = await Promise.all([
+    const [docTypes, ubigeos, stores, roles, countries, productStatuses] = await Promise.all([
       // 1. Tipos de documento
       db.$queryRaw<Array<{ id: string; code: string }>>`
         SELECT id, code FROM document_types
@@ -49,6 +50,11 @@ export async function getCatalogCache(): Promise<CatalogCache> {
 
       db.$queryRaw<Array<{ id: string; iso_code: string }>>`
         SELECT id, iso_code FROM countries
+      `,
+
+      // 5. Estados de producto (ej: 'ACTIVE', 'DRAFT', 'ARCHIVED')
+      db.$queryRaw<Array<{ id: string; code: string }>>`
+        SELECT id, code FROM product_statuses
       `,
     ]);
 
@@ -78,6 +84,11 @@ export async function getCatalogCache(): Promise<CatalogCache> {
       countries: Object.fromEntries(
         countries.map((c) => [c.iso_code, c.id])
       ),
+
+      // { 'ACTIVE': 'uuid-jkl' }
+      productStatuses: Object.fromEntries(
+        productStatuses.map((p) => [p.code, p.id])
+      ),
     };
 
     console.log('✅ Catálogos cargados:', {
@@ -86,6 +97,7 @@ export async function getCatalogCache(): Promise<CatalogCache> {
       stores: Object.keys(CATALOG_CACHE.stores).length,
       roles: Object.keys(CATALOG_CACHE.roles).length,
       countries: Object.keys(CATALOG_CACHE.countries).length,
+      productStatuses: Object.keys(CATALOG_CACHE.productStatuses).length,
     });
 
     return CATALOG_CACHE;
