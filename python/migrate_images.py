@@ -1,260 +1,284 @@
 import os
-from urllib.parse import quote
+import csv
+import hashlib
+import logging
+import requests
+from datetime import datetime
+from urllib.parse import urlparse
 from dotenv import load_dotenv
-import firebase_admin
-from firebase_admin import credentials, storage
+import boto3
+from botocore.exceptions import ClientError
+import mysql.connector
+from mysql.connector import Error as MySQLError
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Cargar variables de entorno
 load_dotenv()
 
-FIREBASE_CREDENTIALS_PATH = os.getenv('FIREBASE_CREDENTIALS_PATH', './firebase-adminsdk.json')
-FIREBASE_BUCKET_NAME = os.getenv('FIREBASE_BUCKET_NAME')
+# Configuración S3
+S3_BUCKET = os.getenv('AWS_S3_BUCKET')
+S3_REGION = os.getenv('AWS_REGION', 'us-east-1')
 
-def init_firebase():
-    """Inicializa la conexión con Firebase evitando duplicados"""
+# Configuración BD Legacy
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST_LEGACY'),
+    'port': int(os.getenv('DB_PORT_LEGACY', 3306)),
+    'user': os.getenv('DB_USER_LEGACY'),
+    'password': os.getenv('DB_PASS_LEGACY'),
+    'database': os.getenv('DB_NAME_LEGACY'),
+    'charset': 'utf8mb4',
+}
+
+# Archivo de log de mapeo
+MIGRATION_LOG_FILE = os.getenv('MIGRATION_LOG_FILE', 'migration_log.csv')
+CSV_FIELDNAMES = ['product_id', 'status', 's3_key', 'new_url', 'message']
+
+
+def init_s3():
+    """Inicializa el cliente S3"""
     try:
-        if firebase_admin._apps:
-            return True
+        s3_client = boto3.client(
+            's3',
+            region_name=S3_REGION,
+            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+        )
+        logger.info("✅ Conexión exitosa con S3")
+        return s3_client
+    except Exception as e:
+        logger.error(f"❌ Error al conectar con S3: {e}")
+        return None
 
-        if not os.path.exists(FIREBASE_CREDENTIALS_PATH):
-            print(f"❌ No se encontró el archivo de credenciales: {FIREBASE_CREDENTIALS_PATH}")
-            return False
-            
-        cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
-        firebase_admin.initialize_app(cred, {
-            'storageBucket': FIREBASE_BUCKET_NAME
-        })
-        print(f"✅ Conexión exitosa con Firebase")
-        print(f"   Bucket: {FIREBASE_BUCKET_NAME}")
+
+def get_db_connection():
+    """Conecta a la base de datos MySQL"""
+    try:
+        conn = mysql.connector.connect(**DB_CONFIG)
+        logger.info("✅ Conexión exitosa a MySQL")
+        return conn
+    except MySQLError as e:
+        logger.error(f"❌ Error al conectar con MySQL: {e}")
+        return None
+
+
+def generate_file_hash(product_id, url):
+    """Genera un hash único basado en product_id + url"""
+    unique_string = f"{product_id}_{url}"
+    hash_object = hashlib.sha256(unique_string.encode())
+    return hash_object.hexdigest()[:16]
+
+
+def get_image_extension(url):
+    """Obtiene la extensión de la imagen desde la URL"""
+    if not url:
+        return '.jpg'
+    parsed = urlparse(url)
+    ext = os.path.splitext(parsed.path)[1].lower()
+    if ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']:
+        return '.jpg' if ext == '.jpeg' else ext
+    return '.jpg'
+
+
+def download_image(url):
+    """Descarga la imagen desde la URL"""
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        return response.content
+    except Exception as e:
+        logger.error(f"❌ Error descargando {url}: {e}")
+        return None
+
+
+def upload_to_s3(s3_client, file_bytes, bucket, key, content_type='image/jpeg'):
+    """Sube el archivo a S3"""
+    try:
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=file_bytes,
+            ContentType=content_type,
+        )
         return True
     except Exception as e:
-        print(f"❌ Error al conectar con Firebase: {e}")
+        logger.error(f" Error subiendo {key} a S3: {e}")
         return False
 
-def format_size(size_bytes):
-    """Formatea el tamaño en bytes a una representación legible"""
-    if size_bytes is None or size_bytes == 0:
-        return "0 B"
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if size_bytes < 1024.0:
-            return f"{size_bytes:.2f} {unit}"
-        size_bytes /= 1024.0
-    return f"{size_bytes:.2f} TB"
 
-def get_int_input(prompt, default):
-    """Valida entradas numéricas del usuario"""
-    val = input(prompt).strip()
-    if not val:
-        return default
-    try:
-        return int(val)
-    except ValueError:
-        print(f"⚠️ Valor inválido, usando default: {default}")
-        return default
+def build_s3_key(product_id, created_at, url):
+    """Construye la ruta S3: products/YYYY/MM/DD/hash.ext"""
+    if isinstance(created_at, str):
+        try:
+            dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        except Exception:
+            dt = datetime.now()
+    elif isinstance(created_at, datetime):
+        dt = created_at
+    else:
+        dt = datetime.now()
 
-def get_firebase_url(bucket_name, blob_name):
-    """Genera la URL pública nativa de Firebase Storage"""
-    encoded_name = quote(blob_name, safe='')
-    return f"https://firebasestorage.googleapis.com/v0/b/{bucket_name}/o/{encoded_name}?alt=media"
+    year = dt.year
+    month = dt.month
+    day = dt.day
 
-def list_images(prefix=None, limit=100, detailed=False):
-    """Lista las imágenes del bucket de Firebase Storage"""
-    try:
-        bucket = storage.bucket()
-        blobs = bucket.list_blobs(max_results=limit, prefix=prefix)
-        
-        print(f"\n📋 Listando imágenes" + (f" con prefijo '{prefix}'" if prefix else ""))
-        print(f"   Máximo: {limit} imágenes")
-        print("=" * 80)
-        
-        count = 0
-        total_size = 0
-        images_by_extension = {}
-        
-        for blob in blobs:
-            count += 1
-            size_bytes = blob.size if blob.size else 0
-            total_size += size_bytes
-            
-            ext = os.path.splitext(blob.name)[1].lower() or 'sin_ext'
-            images_by_extension[ext] = images_by_extension.get(ext, 0) + 1
-            
-            if detailed:
-                updated = blob.updated.strftime('%Y-%m-%d %H:%M:%S') if blob.updated else 'N/A'
-                created = blob.time_created.strftime('%Y-%m-%d %H:%M:%S') if blob.time_created else 'N/A'
-                public_url = get_firebase_url(bucket.name, blob.name)
-                
-                print(f"\n{count}. {blob.name}")
-                print(f"   📏 Tamaño: {format_size(size_bytes)}")
-                print(f"   📅 Creado: {created}")
-                print(f"   🔄 Actualizado: {updated}")
-                print(f"   🔗 URL Firebase: {public_url}")
-                print(f"   🏷️  Content-Type: {blob.content_type or 'N/A'}")
-            else:
-                size_str = format_size(size_bytes)
-                print(f"{count:3d}. {blob.name:<60} {size_str:>10}")
-        
-        print("\n" + "=" * 80)
-        print(f"📊 RESUMEN:")
-        print(f"   Total de imágenes: {count}")
-        print(f"   Tamaño total: {format_size(total_size)}")
-        
-        if images_by_extension:
-            print(f"\n   Por extensión:")
-            for ext, qty in sorted(images_by_extension.items()):
-                print(f"      {ext}: {qty}")
-        
-        return count
-        
-    except Exception as e:
-        print(f"❌ Error al listar imágenes: {e}")
-        return 0
+    file_hash = generate_file_hash(product_id, url)
+    ext = get_image_extension(url)
 
-def search_images(pattern, limit=50):
-    """Busca imágenes que contengan el patrón en el nombre"""
-    try:
-        bucket = storage.bucket()
-        blobs = bucket.list_blobs()
-        
-        results = []
-        pattern_lower = pattern.lower()
-        
-        for blob in blobs:
-            if pattern_lower in blob.name.lower():
-                results.append(blob)
-                if len(results) >= limit:
-                    break
-        
-        if not results:
-            print(f"\n❌ No se encontraron imágenes que contengan '{pattern}'")
-            return 0
-        
-        print(f"\n🔍 Resultados de búsqueda para '{pattern}':")
-        print("=" * 80)
-        
-        for i, blob in enumerate(results, 1):
-            size_str = format_size(blob.size if blob.size else 0)
-            url = get_firebase_url(bucket.name, blob.name)
-            print(f"{i:3d}. {blob.name:<50} {size_str:>10}")
-            print(f"     🔗 {url}")
-        
-        print(f"\n✅ Encontradas {len(results)} imágenes")
-        return len(results)
-        
-    except Exception as e:
-        print(f"❌ Error en la búsqueda: {e}")
-        return 0
+    key = f"products/{year:04d}/{month:02d}/{day:02d}/{file_hash}{ext}"
+    return key
 
-def show_statistics():
-    """Muestra estadísticas completas del bucket"""
-    try:
-        bucket = storage.bucket()
-        blobs = bucket.list_blobs()
-        
-        total_size = 0
-        count = 0
-        extensions = {}
-        folders = {}
-        
-        print("\n⏳ Calculando estadísticas del bucket...")
-        print("Esto puede tomar unos segundos...\n")
-        
-        for blob in blobs:
-            count += 1
-            size_bytes = blob.size if blob.size else 0
-            total_size += size_bytes
-            
-            ext = os.path.splitext(blob.name)[1].lower() or 'sin_ext'
-            extensions[ext] = extensions.get(ext, 0) + 1
-            
-            parts = blob.name.split('/')
-            if len(parts) > 1:
-                folder = parts[0] + '/'
-                folders[folder] = folders.get(folder, 0) + 1
-        
-        print("=" * 80)
-        print("📈 ESTADÍSTICAS DEL BUCKET")
-        print("=" * 80)
-        print(f"\n Total de archivos: {count}")
-        print(f"💾 Tamaño total: {format_size(total_size)}")
-        
-        if folders:
-            print(f"\n📁 Por carpetas principales (top 10):")
-            sorted_folders = sorted(folders.items(), key=lambda x: x[1], reverse=True)[:10]
-            for folder, qty in sorted_folders:
-                print(f"   {folder:<40} {qty:>5} archivos")
-        
-        if extensions:
-            print(f"\n🏷️  Por extensión:")
-            sorted_ext = sorted(extensions.items(), key=lambda x: x[1], reverse=True)
-            for ext, qty in sorted_ext:
-                print(f"   {ext:<10} {qty:>5} archivos")
-        
-        print("=" * 80)
-        return count
-        
-    except Exception as e:
-        print(f"❌ Error al obtener estadísticas: {e}")
-        return 0
+
+def build_s3_url(bucket, region, key):
+    """Construye la URL completa de S3"""
+    return f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+
+
+def append_to_csv(row):
+    """
+    Agrega una fila al CSV inmediatamente.
+    Si el archivo no existe o está vacío, escribe el header primero.
+    """
+    file_exists = os.path.isfile(MIGRATION_LOG_FILE)
+    file_empty = file_exists and os.path.getsize(MIGRATION_LOG_FILE) == 0
+
+    with open(MIGRATION_LOG_FILE, 'a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDNAMES)
+        if not file_exists or file_empty:
+            writer.writeheader()
+        writer.writerow(row)
+        f.flush()  # Forzar escritura en disco
+
+
+def migrate_product(s3_client, product_id, url, created_at):
+    """Migra un producto individual"""
+    s3_key = build_s3_key(product_id, created_at, url)
+    new_url = build_s3_url(S3_BUCKET, S3_REGION, s3_key)
+
+    # Descargar imagen
+    image_data = download_image(url)
+    if not image_data:
+        result = {
+            'product_id': product_id,
+            'status': 'failed',
+            's3_key': s3_key,
+            'new_url': '',
+            'message': 'Error descargando imagen'
+        }
+        append_to_csv(result)
+        return result
+
+    # Detectar content-type
+    ext = get_image_extension(url)
+    content_types = {
+        '.jpg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
+    }
+    content_type = content_types.get(ext, 'image/jpeg')
+
+    # Subir a S3
+    success = upload_to_s3(s3_client, image_data, S3_BUCKET, s3_key, content_type)
+
+    if success:
+        result = {
+            'product_id': product_id,
+            'status': 'success',
+            's3_key': s3_key,
+            'new_url': new_url,
+            'message': 'Migrado exitosamente'
+        }
+    else:
+        result = {
+            'product_id': product_id,
+            'status': 'failed',
+            's3_key': s3_key,
+            'new_url': '',
+            'message': 'Error subiendo a S3'
+        }
+
+    # ✅ Guardar inmediatamente en el CSV
+    append_to_csv(result)
+    return result
+
 
 def main():
-    if not init_firebase():
+    """Función principal"""
+    logger.info("🚀 Iniciando migración de imágenes a S3")
+    logger.info("️  MODO: Solo BD legacy + escritura en S3. NO se actualiza la BD.")
+    logger.info(f"📄 CSV se guardará en: {os.path.abspath(MIGRATION_LOG_FILE)}")
+
+    # Inicializar S3
+    s3_client = init_s3()
+    if not s3_client:
         return
-    
-    while True:
-        print("\n" + "=" * 80)
-        print("🔧 MENÚ PRINCIPAL - Firebase Storage")
-        print("=" * 80)
-        print("1. Listar imágenes (primeras 100)")
-        print("2. Listar con prefijo específico")
-        print("3. Listar con información detallada y URLs")
-        print("4. Buscar imágenes por nombre")
-        print("5. Ver estadísticas del bucket")
-        print("6. Salir")
-        print("=" * 80)
-        
-        try:
-            choice = input("\nSelecciona una opción (1-6): ").strip()
-            
-            if choice == '1':
-                list_images(limit=100, detailed=False)
-            
-            elif choice == '2':
-                prefix = input("Ingresa el prefijo (ej: 'products/', 'uploads/'): ").strip()
-                if prefix:
-                    limit = get_int_input("Número máximo de imágenes (default 100): ", 100)
-                    list_images(prefix=prefix, limit=limit, detailed=False)
-                else:
-                    print("⚠️ Debes ingresar un prefijo")
-            
-            elif choice == '3':
-                prefix = input("Prefijo opcional (dejar vacío para todo): ").strip() or None
-                limit = get_int_input("Número máximo de imágenes (default 50): ", 50)
-                list_images(prefix=prefix, limit=limit, detailed=True)
-            
-            elif choice == '4':
-                pattern = input("Ingresa el patrón a buscar: ").strip()
-                if pattern:
-                    limit = get_int_input("Número máximo de resultados (default 50): ", 50)
-                    search_images(pattern, limit=limit)
-                else:
-                    print("❌ Debes ingresar un patrón de búsqueda")
-            
-            elif choice == '5':
-                show_statistics()
-            
-            elif choice == '6':
-                print("\n👋 ¡Hasta luego!")
-                break
-            
+
+    # Conectar a BD
+    conn = get_db_connection()
+    if not conn:
+        return
+
+    cursor = conn.cursor()
+
+    try:
+        # Obtener productos
+        cursor.execute("""
+            SELECT id, urlImage, createdAt
+            FROM Product
+            WHERE urlImage IS NOT NULL
+              AND urlImage != ''
+              AND isActive = 1
+            ORDER BY id
+        """)
+        products = cursor.fetchall()
+
+        if not products:
+            logger.info("ℹ️  No hay productos con imágenes para migrar")
+            return
+
+        logger.info(f" Total de productos a migrar: {len(products)}")
+
+        success_count = 0
+        failed_count = 0
+
+        for i, product in enumerate(products, 1):
+            product_id, url, created_at = product[0], product[1], product[2]
+
+            logger.info(f"[{i}/{len(products)}] Procesando producto ID: {product_id}")
+
+            result = migrate_product(s3_client, product_id, url, created_at)
+
+            if result['status'] == 'success':
+                success_count += 1
+                logger.info(f"   ✅ Migrado: {result['new_url']}")
             else:
-                print("❌ Opción no válida. Intenta de nuevo.")
-        
-        except KeyboardInterrupt:
-            print("\n\n👋 ¡Hasta luego!")
-            break
-        except Exception as e:
-            print(f"❌ Error inesperado: {e}")
+                failed_count += 1
+                logger.error(f"   ❌ Fallido: {result['message']}")
+
+            # Log de progreso cada 100 productos
+            if i % 100 == 0:
+                logger.info(f"📊 Progreso: {i}/{len(products)} | ✅ {success_count} | ❌ {failed_count}")
+
+        # Resumen final
+        logger.info("=" * 60)
+        logger.info(" MIGRACIÓN COMPLETADA")
+        logger.info(f"✅ Exitosos: {success_count}")
+        logger.info(f"❌ Fallidos: {failed_count}")
+        logger.info(f"📦 Total: {len(products)}")
+        logger.info(f"📄 CSV guardado en: {os.path.abspath(MIGRATION_LOG_FILE)}")
+        logger.info("=" * 60)
+
+    finally:
+        cursor.close()
+        conn.close()
+        logger.info("🔌 Conexión a MySQL cerrada")
+
 
 if __name__ == "__main__":
     main()

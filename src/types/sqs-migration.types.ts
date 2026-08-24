@@ -143,7 +143,6 @@ export interface UserMigrationResponse {
 //todo: productos
 export type ProductMigrationEventType = "CREATE_PRODUCT";
 
-
 export interface ProductCategoryPayload {
   id?: string;
   name?: string;
@@ -188,6 +187,15 @@ export interface SkuPayload {
   trackStock?: boolean;
   allowBackorder?: boolean;
   isActive?: boolean;
+  warehouseSkus?: WarehouseSkuPayload[];
+}
+
+export interface WarehouseSkuPayload {
+  legacyWarehouseSkuId?: number;
+  legacyWarehouseId: number; // Crucial para hacer el JOIN con la tabla `warehouses`
+  stockPhysical?: number;
+  stockVirtual?: number;
+  stockReserved?: number;
 }
 
 export interface ProductPayload {
@@ -227,4 +235,6 @@ export interface ProductMigrationMessage {
 }
 
 // Tipo unión que consume el entrypoint SQS y el use case.
-export type SqsMigrationMessage = UserMigrationMessage | ProductMigrationMessage;
+export type SqsMigrationMessage =
+  | UserMigrationMessage
+  | ProductMigrationMessage;
