@@ -988,7 +988,7 @@ model products {
   created_at             DateTime?          @db.Timestamp(0)
   updated_at             DateTime?          @db.Timestamp(0)
   order_details          order_details[]
-  product_images         product_images[]
+  product_images         product_images[]   @relation("ProductToImages")
   product_variants       product_variants[]
   stores                 stores?            @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "products_ibfk_1")
   categories             categories?        @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "products_ibfk_2")
@@ -1176,7 +1176,7 @@ model warehouse_skus {
 model warehouses {
   id             String           @id @default(uuid()) @db.Char(36)
   store_id       String?          @db.Char(36)
-  legacy_id      BigInt?
+  warehouse_legacy_id      BigInt?
   name           String?          @db.VarChar(255)
   address        String?          @db.Text
   is_active      Boolean?         @default(true)
@@ -1295,7 +1295,7 @@ model product_images {
   is_active  Boolean   @default(true)
   created_at DateTime? @default(now()) @db.Timestamp(0)
   updated_at DateTime? @default(now()) @db.Timestamp(0)
-  products   products  @relation(fields: [product_id], references: [id], onDelete: Cascade, map: "product_images_ibfk_1")
+  products   products  @relation("ProductToImages", fields: [product_id], references: [id], onDelete: Cascade)
 
   @@index([product_id, is_active], map: "idx_product_images_active")
   @@index([product_id, position], map: "idx_product_images_by_position")
