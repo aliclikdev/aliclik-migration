@@ -20,15 +20,20 @@ export class CreateProductHandler {
       throw new Error("[CREATE_PRODUCT] Se requiere al menos un SKU.");
     }
 
-    // ✅ CORRECCIÓN: productStatuses es un Record<string, string>, no un array
-    const statusId = product.statusCode
-      ? catalog.productStatuses[product.statusCode]
-      : undefined;
+    let statusId: string | null = null;
 
-    if (product.statusCode && !statusId) {
-      throw new Error(
-        `[CREATE_PRODUCT] Status "${product.statusCode}" no encontrado en catálogo product_statuses.`,
-      );
+    // ✅ CORRECCIÓN: productStatuses es un Record<string, string>, no un array
+    if (product.statusCode) {
+      statusId = catalog.productStatuses[product.statusCode] ?? null;
+
+      if (!statusId) {
+        // ⚠️ No fallar, solo advertir. El producto se migra sin status.
+        logger.warn(
+          `[CREATE_PRODUCT] Status "${product.statusCode}" no encontrado en catálogo. ` +
+            `Disponible: ${JSON.stringify(Object.keys(catalog.productStatuses))}. ` +
+            `Se migrará con status_id = null.`,
+        );
+      }
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -69,7 +74,7 @@ export class CreateProductHandler {
         store_id: storeId,
         category_id: categoryId,
         catalog_id: catalogId,
-        status_id: statusId ?? null,
+        status_id: statusId,
       };
 
       if (productRecord) {
@@ -232,24 +237,35 @@ export class CreateProductHandler {
   ): Promise<string | null> {
     if (!catalog?.name) return null;
 
-    let cat = await tx.catalogs.findFirst({
-      where: { store_id: storeId, name: catalog.name },
+    const normalizedName = catalog.name.trim();
+
+    let existing = await tx.catalogs.findFirst({
+      where: {
+        name: normalizedName,
+        store_id: storeId,
+      },
       select: { id: true },
     });
 
-    if (!cat) {
-      cat = await tx.catalogs.create({
+    if (!existing) {
+      logger.info(
+        `[CREATE_PRODUCT] Creando catálogo "${normalizedName}" para tienda ${storeId}`,
+      );
+      existing = await tx.catalogs.create({
         data: {
           id: randomUUID(),
-          store_id: storeId,
-          name: catalog.name,
-          is_public: false,
-          is_active: true,
+          name: normalizedName,
+          is_public: catalog.isPublic ?? false,
+          // ❌ QUITAR: is_active: true,
+          stores: {
+            connect: { id: storeId },
+          },
         },
         select: { id: true },
       });
     }
-    return cat.id;
+
+    return existing.id;
   }
 
   private async resolveWarehouse(
@@ -260,7 +276,7 @@ export class CreateProductHandler {
     let warehouse = await tx.warehouses.findFirst({
       where: {
         store_id: storeId,
-        legacy_id: BigInt(legacyWarehouseId),
+        warehouse_legacy_id: BigInt(legacyWarehouseId),
       },
       select: { id: true },
     });

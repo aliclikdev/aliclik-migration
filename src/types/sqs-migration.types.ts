@@ -5,7 +5,9 @@ export type MigrationEventType =
   | "GET_USER"
   | "ACCEPT_TERMS"
   | "STORE_SETTINGS"
-  | "CREATE_PRODUCT";
+  | "CREATE_PRODUCT"
+  | "CREATE_PRODUCT_VARIANT"
+  | "CREATE_SKU";
 
 // Estructura anidada para la tienda
 export interface StoreWithDetails {
@@ -234,7 +236,63 @@ export interface ProductMigrationMessage {
   images?: ProductImagePayload[];
 }
 
+// ============================================
+// VARIANTES (Nivel 2)
+// ============================================
+export interface VariantOptionPayload {
+  legacyOptionId?: number;
+  name: string;
+}
+
+export interface VariantPayload {
+  legacyVariantId?: number;
+  legacyProductId: number;
+  name: string;
+  options?: VariantOptionPayload[];
+}
+
+export interface ProductVariantMigrationMessage {
+  eventId: string;
+  eventType: string;
+  timestamp: string;
+  sourceSystem: "ALICLIK_LEGACY_HEROKU";
+  replyToQueueUrl?: string;
+  variant: VariantPayload;
+}
+
+// ============================================
+// SKUS (Nivel 3)
+// ============================================
+export interface SkuVariantOptionRef {
+  legacyOptionId?: number;
+  variantOptionId?: string; // UUID del nuevo sistema (si ya existe)
+}
+
+export interface SkuMigrationPayload {
+  legacySkuId?: number;
+  legacyProductId: number;
+  skuCode: string;
+  ean?: string;
+  regularPrice?: number;
+  salesPrice?: number;
+  purchasePrice?: number;
+  stockMin?: number;
+  stockMax?: number;
+  variantOptions?: SkuVariantOptionRef[];
+}
+
+export interface SkuMigrationMessage {
+  eventId: string;
+  eventType: string;
+  timestamp: string;
+  sourceSystem: "ALICLIK_LEGACY_HEROKU";
+  replyToQueueUrl?: string;
+  sku: SkuMigrationPayload;
+}
+
 // Tipo unión que consume el entrypoint SQS y el use case.
 export type SqsMigrationMessage =
   | UserMigrationMessage
-  | ProductMigrationMessage;
+  | ProductMigrationMessage
+  | ProductVariantMigrationMessage
+  | SkuMigrationMessage;
