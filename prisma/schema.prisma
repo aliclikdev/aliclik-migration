@@ -952,15 +952,15 @@ model product_statuses {
 }
 
 model product_variants {
-  id              String            @id @default(uuid()) @db.Char(36)
+  id                String            @id @default(uuid()) @db.Char(36)
   legacy_variant_id BigInt?
-  product_id      String?           @db.Char(36)
-  name            String            @db.VarChar(100)
-  products        products?         @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "product_variants_ibfk_1")
-  variant_options variant_options[]
+  product_id        String?           @db.Char(36)
+  name              String            @db.VarChar(100)
+  products          products?         @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "product_variants_ibfk_1")
+  variant_options   variant_options[]
 
-  @@index([product_id], map: "idx_variants_by_product")
   @@unique([product_id, legacy_variant_id], map: "idx_unique_product_variant")
+  @@index([product_id], map: "idx_variants_by_product")
 }
 
 model products {
@@ -1067,6 +1067,7 @@ model skus {
   warehouse_skus      warehouse_skus[]
 
   @@unique([product_id, sku_code], map: "idx_unique_sku_per_product")
+  @@unique([sku_code, store_id], map: "sku_code_store_id")
   @@unique([store_id, sku_code], map: "idx_unique_sku_per_store")
   @@index([ean], map: "idx_sku_by_ean")
   @@index([store_id, is_active], map: "idx_skus_by_store_active")
@@ -1110,8 +1111,8 @@ model variant_options {
   sku_variant_options sku_variant_options[]
   product_variants    product_variants?     @relation(fields: [variant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "variant_options_ibfk_1")
 
-  @@index([variant_id], map: "idx_options_by_variant")
   @@unique([variant_id, legacy_option_id], map: "idx_unique_variant_option")
+  @@index([variant_id], map: "idx_options_by_variant")
 }
 
 model wallet_transactions {
@@ -1178,22 +1179,29 @@ model warehouse_skus {
 }
 
 model warehouses {
-  id             String           @id @default(uuid()) @db.Char(36)
-  store_id       String?          @db.Char(36)
-  warehouse_legacy_id      BigInt?
-  name           String?          @db.VarChar(255)
-  address        String?          @db.Text
-  is_active      Boolean?         @default(true)
-  created_at     DateTime?        @db.Timestamp(0)
-  updated_at     DateTime?        @db.Timestamp(0)
-  inventory      inventory[]
-  kardex         kardex[]
-  orders         orders[]
-  warehouse_skus warehouse_skus[]
-  stores         stores?          @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "warehouses_ibfk_1")
+  id                  String   @id @db.Char(36)
+  store_id            String   @db.Char(36)
+  warehouse_legacy_id BigInt?
+  name                String?  @db.VarChar(255)
+  address             String?  @db.Text
+  ubigeo_id           String?  @db.Char(36)
+  lat                 Decimal? @db.Decimal(10, 7)
+  lng                 Decimal? @db.Decimal(10, 7)
+  is_active           Boolean  @default(true)
+  created_at          DateTime @default(now()) @db.Timestamp(0)
+  updated_at          DateTime @updatedAt @db.Timestamp(0)
+
+  // Relación inversa con warehouse_settings
+  warehouse_settings warehouse_settings?
+  inventory          inventory[]
+  kardex             kardex[]
+  orders             orders[]
+  warehouse_skus     warehouse_skus[]
+  stores             stores?             @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "warehouses_ibfk_1")
 
   @@index([store_id], map: "idx_warehouse_by_store")
   @@index([store_id, is_active], map: "idx_warehouse_by_store_active")
+  @@map("warehouses")
 }
 
 model terms_conditions {
@@ -1280,6 +1288,38 @@ model bank_accounts {
   @@index([account_type_id], map: "bank_accounts_account_type_fkey")
   @@index([owner_id], map: "bank_accounts_warehouse_fkey")
   @@map("bank_accounts")
+}
+
+model warehouse_settings {
+  id           String @id @db.Char(36)
+  warehouse_id String @unique @db.Char(36)
+
+  // Servicio Express
+  flag_delivery_express       Boolean   @default(false)
+  hour_delivery_express_start DateTime? @db.Time
+  hour_delivery_express_end   DateTime? @db.Time
+
+  // Contraentrega
+  is_cash_on_delivery          Boolean   @default(false)
+  deadline_time_delivery_local DateTime? @db.Time
+  deadline_time_external       DateTime? @db.Time
+  is_delivery_same_day_main    Boolean   @default(false)
+
+  // Agencia (Shalom)
+  is_drop_shalom       Boolean   @default(false)
+  shalom_origin_in     String?   @db.VarChar(200)
+  deadline_time_agency DateTime? @db.Time
+
+  // Configuraciones adicionales
+  is_not_work_holiday             Boolean @default(false)
+  is_move_massive_dispatch_status Boolean @default(false)
+
+  created_at DateTime @default(now()) @db.Timestamp(0)
+  updated_at DateTime @updatedAt @db.Timestamp(0)
+
+   warehouse warehouses @relation(fields: [warehouse_id], references: [id], onDelete: Cascade)
+
+  @@map("warehouse_settings")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

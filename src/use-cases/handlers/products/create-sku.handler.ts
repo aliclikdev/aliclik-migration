@@ -1,6 +1,9 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { randomUUID } from "crypto";
-import { SkuMigrationMessage } from "../../../types/sqs-migration.types";
+import {
+  SkuMigrationMessage,
+  SkuVariantOptionRef,
+} from "../../../types/sqs-migration.types";
 import { logger } from "../../../utils/logger";
 
 export class CreateSkuHandler {
@@ -8,14 +11,11 @@ export class CreateSkuHandler {
 
   async execute(payload: SkuMigrationMessage): Promise<void> {
     const { sku, eventId } = payload;
-
-    if (!sku.skuCode?.trim()) {
-      throw new Error("[CREATE_SKU] El skuCode es requerido.");
+    if (!sku.skuCode) {
+      throw new Error("[CREATE_SKU] El código SKU es obligatorio.");
     }
-
     await this.prisma.$transaction(async (tx) => {
-      // 1. Resolver producto padre
-      const product = await tx.products.findFirst({
+      const productRecord = await tx.products.findFirst({
         where: {
           legacy_product_id: sku.legacyProductId
             ? BigInt(sku.legacyProductId)
@@ -23,19 +23,23 @@ export class CreateSkuHandler {
         },
         select: { id: true, store_id: true },
       });
-
-      if (!product) {
+      if (!productRecord) {
         throw new Error(
-          `[CREATE_SKU] Producto no encontrado con legacyProductId: ${sku.legacyProductId}`,
+          `[CREATE_SKU] Producto padre no encontrado con legacy_id: ${sku.legacyProductId}. Asegúrese de procesar primero el evento CREATE_PRODUCT.`,
         );
       }
+      if (!productRecord.store_id) {
+        throw new Error(
+          `[CREATE_SKU] El producto padre (legacy_id: ${sku.legacyProductId}) no tiene store_id asignado.`,
+        );
+      }
+      const storeId: string = productRecord.store_id;
 
-      // 2. Upsert del SKU
       const skuRecord = await tx.skus.upsert({
         where: {
-          product_id_sku_code: {
-            product_id: product.id,
-            sku_code: sku.skuCode.trim(),
+          sku_code_store_id: {
+            sku_code: sku.skuCode,
+            store_id: storeId,
           },
         },
         update: {
@@ -45,89 +49,193 @@ export class CreateSkuHandler {
           purchase_price: sku.purchasePrice ?? 0,
           stock_min: sku.stockMin ?? 0,
           stock_max: sku.stockMax ?? 0,
-          is_active: true,
-          updated_at: new Date(),
+          is_active: sku.isActive ?? true,
           legacy_sku_id: sku.legacySkuId ? BigInt(sku.legacySkuId) : null,
+          updated_at: new Date(),
         },
         create: {
           id: randomUUID(),
-          store_id: product.store_id,
-          product_id: product.id,
-          sku_code: sku.skuCode.trim(),
+          store_id: storeId,
+          product_id: productRecord.id,
+          sku_code: sku.skuCode,
           ean: sku.ean ?? null,
           regular_price: sku.regularPrice ?? 0,
           sales_price: sku.salesPrice ?? 0,
           purchase_price: sku.purchasePrice ?? 0,
           stock_min: sku.stockMin ?? 0,
           stock_max: sku.stockMax ?? 0,
-          is_active: true,
+          is_active: sku.isActive ?? true,
           legacy_sku_id: sku.legacySkuId ? BigInt(sku.legacySkuId) : null,
+        },
+      });
+
+      if (sku.warehouseStocks && sku.warehouseStocks.length > 0) {
+        for (const whStock of sku.warehouseStocks) {
+          if (!whStock.legacyWarehouseId) {
+            logger.warn(
+              `[CREATE_SKU] warehouseStock sin legacyWarehouseId, se omite: ${JSON.stringify(whStock)}`,
+            );
+            continue;
+          }
+          const warehouseId = await this.resolveOrCreateWarehouse(
+            tx,
+            storeId,
+            whStock.legacyWarehouseId,
+            whStock.warehouseName,
+          );
+          await tx.warehouse_skus.upsert({
+            where: {
+              sku_id_warehouse_id: {
+                sku_id: skuRecord.id,
+                warehouse_id: warehouseId,
+              },
+            },
+            update: {
+              stock_physical: whStock.stockPhysical ?? 0,
+              stock_virtual: whStock.stockVirtual ?? 0,
+              stock_reserved: whStock.stockReserved ?? 0,
+              updated_at: new Date(),
+            },
+            create: {
+              id: randomUUID(),
+              legacy_warehouse_sku_id: whStock.legacyWarehouseSkuId
+                ? BigInt(whStock.legacyWarehouseSkuId)
+                : null,
+              store_id: storeId,
+              sku_id: skuRecord.id,
+              warehouse_id: warehouseId,
+              stock_physical: whStock.stockPhysical ?? 0,
+              stock_virtual: whStock.stockVirtual ?? 0,
+              stock_reserved: whStock.stockReserved ?? 0,
+            },
+          });
+        }
+      }
+
+      if (sku.variantOptions && sku.variantOptions.length > 0) {
+        for (const variantOpt of sku.variantOptions) {
+          const optionId = await this.resolveOrCreateOption(
+            tx,
+            storeId,
+            productRecord.id,
+            variantOpt,
+          );
+          if (optionId) {
+            await tx.sku_variant_options.upsert({
+              where: {
+                sku_id_variant_option_id: {
+                  sku_id: skuRecord.id,
+                  variant_option_id: optionId,
+                },
+              },
+              update: {},
+              create: {
+                id: randomUUID(),
+                sku_id: skuRecord.id,
+                variant_option_id: optionId,
+              },
+            });
+            logger.info(`[CREATE_SKU] Opción vinculada al SKU: ${optionId}`);
+          }
+        }
+      }
+    });
+    logger.info(
+      `[CreateSkuHandler] SKU y stocks migrados exitosamente: ${eventId} (${sku.skuCode})`,
+    );
+  }
+
+  private async resolveOrCreateWarehouse(
+    tx: Prisma.TransactionClient,
+    storeId: string,
+    legacyWarehouseId: number,
+    warehouseName?: string,
+  ): Promise<string> {
+    let warehouse = await tx.warehouses.findFirst({
+      where: { warehouse_legacy_id: BigInt(legacyWarehouseId) },
+      select: { id: true, name: true },
+    });
+    if (!warehouse) {
+      const resolvedName =
+        warehouseName?.trim() || `Almacén Legacy ${legacyWarehouseId}`;
+      if (!warehouseName?.trim()) {
+        logger.warn(
+          `[CREATE_SKU] Warehouse legacy ${legacyWarehouseId} no trajo warehouseName; se usará un nombre genérico temporal.`,
+        );
+      }
+      logger.info(
+        `[CREATE_SKU] Warehouse legacy ${legacyWarehouseId} no existe. Creándolo automáticamente como "${resolvedName}"...`,
+      );
+      const newWarehouse = await tx.warehouses.create({
+        data: {
+          id: randomUUID(),
+          warehouse_legacy_id: BigInt(legacyWarehouseId),
+          store_id: storeId,
+          name: resolvedName,
+          is_active: true,
         },
         select: { id: true },
       });
-
+      warehouse = { id: newWarehouse.id, name: resolvedName };
+    } else if (
+      warehouseName?.trim() &&
+      warehouse.name !== warehouseName.trim()
+    ) {
+      // El warehouse ya existe pero el nombre llegó actualizado desde el legacy: lo sincronizamos.
+      await tx.warehouses.update({
+        where: { id: warehouse.id },
+        data: { name: warehouseName.trim() },
+      });
       logger.info(
-        `[CREATE_SKU] SKU "${sku.skuCode}" procesado (id: ${skuRecord.id})`,
+        `[CREATE_SKU] Nombre de warehouse legacy ${legacyWarehouseId} actualizado a "${warehouseName.trim()}".`,
       );
+    }
+    return warehouse.id;
+  }
 
-      // 3. Relacionar SKU con opciones de variante (sku_variant_options)
-      // 3. Relacionar SKU con opciones de variante (sku_variant_options)
-      if (sku.variantOptions && sku.variantOptions.length > 0) {
-        for (const voRef of sku.variantOptions) {
-          let variantOptionId: string | null = null;
-
-          // Opción A: Ya tenemos el UUID del nuevo sistema
-          if (voRef.variantOptionId) {
-            variantOptionId = voRef.variantOptionId;
-          }
-          // Opción B: Resolver por legacyOptionId
-          else if (voRef.legacyOptionId) {
-            // ✅ Buscar directamente la variant_option por legacy_option_id
-            const optionRecord = await tx.variant_options.findFirst({
-              where: {
-                legacy_option_id: BigInt(voRef.legacyOptionId),
-              },
-              select: { id: true },
-            });
-
-            if (optionRecord) {
-              variantOptionId = optionRecord.id;
-            } else {
-              logger.warn(
-                `[CREATE_SKU] variant_option con legacyOptionId ${voRef.legacyOptionId} no encontrado. Se omite la relación.`,
-              );
-              continue;
-            }
-          }
-
-          if (variantOptionId) {
-            // Crear relación en sku_variant_options
-            const existingSkuOption = await tx.sku_variant_options.findFirst({
-              where: {
-                sku_id: skuRecord.id,
-                variant_option_id: variantOptionId,
-              },
-              select: { id: true },
-            });
-
-            if (!existingSkuOption) {
-              await tx.sku_variant_options.create({
-                data: {
-                  id: randomUUID(),
-                  sku_id: skuRecord.id,
-                  variant_option_id: variantOptionId,
-                },
-              });
-            }
-          }
-        }
-
-        logger.info(
-          `[CREATE_SKU] ${sku.variantOptions.length} relaciones variant_option procesadas para SKU ${skuRecord.id}`,
-        );
-      }
-    });
-
-    logger.info(`[CREATE_SKU] Evento completado exitosamente: ${eventId}`);
+  private async resolveOrCreateOption(
+    tx: Prisma.TransactionClient,
+    storeId: string,
+    productId: string,
+    ref: SkuVariantOptionRef,
+  ): Promise<string | null> {
+    let optionId: string | null = null;
+    if (ref.legacyOptionId) {
+      const optionByLegacy = await tx.variant_options.findFirst({
+        where: { legacy_option_id: BigInt(ref.legacyOptionId) },
+        select: { id: true },
+      });
+      if (optionByLegacy) optionId = optionByLegacy.id;
+    }
+    if (!optionId && ref.name) {
+      const optionByName = await tx.variant_options.findFirst({
+        where: { name: ref.name },
+        select: { id: true },
+      });
+      if (optionByName) optionId = optionByName.id;
+    }
+    if (!optionId && ref.name) {
+      const createdOption = await tx.variant_options.create({
+        data: {
+          id: randomUUID(),
+          name: ref.name,
+          legacy_option_id: ref.legacyOptionId
+            ? BigInt(ref.legacyOptionId)
+            : null,
+          is_active: true,
+        },
+        select: { id: true },
+      });
+      optionId = createdOption.id;
+      logger.info(
+        `[CREATE_SKU] Opción creada: ${ref.name} (legacy: ${ref.legacyOptionId})`,
+      );
+    }
+    if (!optionId) {
+      logger.warn(
+        `[CREATE_SKU] No se pudo resolver la opción: legacy=${ref.legacyOptionId}, name=${ref.name}`,
+      );
+    }
+    return optionId;
   }
 }

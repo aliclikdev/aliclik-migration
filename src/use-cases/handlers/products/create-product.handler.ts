@@ -14,70 +14,81 @@ export class CreateProductHandler {
 
   async execute(payload: ProductMigrationMessage): Promise<void> {
     const catalog = await getCatalogCache();
-    const { product, skus, images, eventId } = payload;
+    const { product, images, eventId } = payload;
 
-    if (!skus || skus.length === 0) {
-      throw new Error("[CREATE_PRODUCT] Se requiere al menos un SKU.");
+    if (!product.name?.trim()) {
+      throw new Error("[CREATE_PRODUCT] El nombre del producto es requerido.");
     }
 
+    // Resolver status (defensivo)
     let statusId: string | null = null;
-
-    // ✅ CORRECCIÓN: productStatuses es un Record<string, string>, no un array
     if (product.statusCode) {
       statusId = catalog.productStatuses[product.statusCode] ?? null;
-
       if (!statusId) {
-        // ⚠️ No fallar, solo advertir. El producto se migra sin status.
         logger.warn(
-          `[CREATE_PRODUCT] Status "${product.statusCode}" no encontrado en catálogo. ` +
-            `Disponible: ${JSON.stringify(Object.keys(catalog.productStatuses))}. ` +
+          `[CREATE_PRODUCT] Status "${product.statusCode}" no encontrado. ` +
+            `Disponibles: ${Object.keys(catalog.productStatuses).join(", ")}. ` +
             `Se migrará con status_id = null.`,
         );
       }
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // 1. Resolver Store
-      const storeId = await this.resolveStore(tx, product.storeLegacyId);
-
-      // 2. Resolver Categoría
-      const categoryId = await this.resolveCategory(
+      // ✅ Resolver store (puede ser null)
+      const storeId = await this.resolveStore(
         tx,
-        storeId,
-        product.category,
+        product.storeLegacyId,
+        product.storeId,
       );
 
-      // 3. Resolver Catálogo
-      const catalogId = await this.resolveCatalog(tx, storeId, product.catalog);
+      // ✅ Resolver categoría (solo si hay store)
+      const categoryId = storeId
+        ? await this.resolveCategory(tx, storeId, product.category)
+        : null;
+
+      // ✅ Resolver catálogo (solo si hay store)
+      const catalogId = storeId
+        ? await this.resolveCatalog(tx, storeId, product.catalog)
+        : null;
 
       // 4. Upsert Producto
-      let productRecord = await tx.products.findFirst({
-        where: {
-          legacy_product_id: product.legacyProductId
-            ? BigInt(product.legacyProductId)
-            : undefined,
-        },
-        select: { id: true },
-      });
-
       const productData = {
-        name: product.name,
+        name: product.name.trim(),
         short_description: product.shortDescription ?? null,
         large_description: product.largeDescription ?? null,
         description: product.description ?? null,
         url_image: product.urlImage ?? null,
+        url_reference: product.urlReference ?? null,
+        is_product_global: product.isProductGlobal ?? false,
+        sale_price_drop: product.salePriceDrop ?? null,
+        price_drop_crate: product.priceDropCrate ?? null,
+        price_drop_dozen: product.priceDropDozen ?? null,
+        retail_price_suggested: product.retailPriceSuggested ?? null,
+        units_crate: product.unitsCrate ?? null,
         is_novelty: product.isNovelty ?? false,
+        is_large_volume: product.isLargeVolume ?? false,
         is_validate: product.isValidate ?? false,
         is_registered_product: product.isRegisteredProduct ?? false,
-        retail_price_suggested: product.retailPriceSuggested ?? 0,
         is_active: product.isActive ?? true,
-        store_id: storeId,
+        store_id: storeId, // ✅ Puede ser null
         category_id: categoryId,
         catalog_id: catalogId,
-        status_id: statusId,
+        ...(statusId ? { status_id: statusId } : {}),
       };
 
+      let productRecord = product.legacyProductId
+        ? await tx.products.findFirst({
+            where: {
+              legacy_product_id: BigInt(product.legacyProductId),
+            },
+            select: { id: true },
+          })
+        : null;
+
       if (productRecord) {
+        logger.info(
+          `[CREATE_PRODUCT] Producto legacy ${product.legacyProductId} ya existe (${productRecord.id}), actualizando.`,
+        );
         productRecord = await tx.products.update({
           where: { id: productRecord.id },
           data: productData,
@@ -92,94 +103,35 @@ export class CreateProductHandler {
             ...productData,
           },
         });
+        logger.info(
+          `[CREATE_PRODUCT] Producto creado: ${productRecord.id} (legacy: ${product.legacyProductId})`,
+        );
       }
 
-      // 5. Upsert SKUs y Warehouse SKUs
-      for (const sku of skus) {
-        const skuRecord = await tx.skus.upsert({
-          where: {
-            product_id_sku_code: {
-              product_id: productRecord.id,
-              sku_code: sku.skuCode,
-            },
-          },
-          update: {
-            ean: sku.ean ?? null,
-            regular_price: sku.regularPrice,
-            sales_price: sku.salesPrice,
-            purchase_price: sku.purchasePrice,
-            legacy_sku_id: sku.legacySkuId ? BigInt(sku.legacySkuId) : null,
-            is_active: sku.isActive ?? true,
-          },
-          create: {
-            id: randomUUID(),
-            store_id: storeId,
-            product_id: productRecord.id,
-            sku_code: sku.skuCode,
-            ean: sku.ean ?? null,
-            regular_price: sku.regularPrice,
-            sales_price: sku.salesPrice,
-            purchase_price: sku.purchasePrice,
-            legacy_sku_id: sku.legacySkuId ? BigInt(sku.legacySkuId) : null,
-            is_active: sku.isActive ?? true,
-          },
-        });
-
-        // ✅ CORRECCIÓN: warehouseSkus (camelCase) + sku_id_warehouse_id (nombre del compound unique)
-        if (sku.warehouseSkus && sku.warehouseSkus.length > 0) {
-          for (const ws of sku.warehouseSkus) {
-            const warehouseId = await this.resolveWarehouse(
-              tx,
-              storeId,
-              ws.legacyWarehouseId,
-            );
-
-            await tx.warehouse_skus.upsert({
-              where: {
-                // ✅ CORRECCIÓN: El compound unique se accede por nombre generado: sku_id_warehouse_id
-                sku_id_warehouse_id: {
-                  sku_id: skuRecord.id,
-                  warehouse_id: warehouseId,
-                },
-              },
-              update: {
-                stock_physical: ws.stockPhysical ?? 0,
-                stock_virtual: ws.stockVirtual ?? 0,
-                stock_reserved: ws.stockReserved ?? 0,
-                legacy_warehouse_sku_id: ws.legacyWarehouseSkuId
-                  ? BigInt(ws.legacyWarehouseSkuId)
-                  : null,
-                updated_at: new Date(),
-              },
-              create: {
-                id: randomUUID(),
-                store_id: storeId,
-                sku_id: skuRecord.id,
-                warehouse_id: warehouseId,
-                stock_physical: ws.stockPhysical ?? 0,
-                stock_virtual: ws.stockVirtual ?? 0,
-                stock_reserved: ws.stockReserved ?? 0,
-                legacy_warehouse_sku_id: ws.legacyWarehouseSkuId
-                  ? BigInt(ws.legacyWarehouseSkuId)
-                  : null,
-              },
-            });
-          }
-        }
-      }
-
-      // ✅ CORRECCIÓN: productImages (camelCase)
+      // 5. Migrar imágenes
       if (images && images.length > 0) {
         await tx.product_images.createMany({
           data: images.map((img, index) => ({
             id: randomUUID(),
             product_id: productRecord.id,
             url: img.url,
+            title: img.title ?? null,
+            alt_text: img.altText ?? null,
             position: img.position ?? index,
             is_primary: img.isPrimary ?? index === 0,
+            image_type: img.imageType ?? "PRODUCT",
+            width: img.width ?? null,
+            height: img.height ?? null,
+            file_size: img.fileSize ?? null,
+            mime_type: img.mimeType ?? null,
+            is_active: img.isActive ?? true,
           })),
           skipDuplicates: true,
         });
+
+        logger.info(
+          `[CREATE_PRODUCT] ${images.length} imágenes migradas para producto ${productRecord.id}`,
+        );
       }
     });
 
@@ -188,62 +140,100 @@ export class CreateProductHandler {
     );
   }
 
-  // --- Helpers de Resolución ---
-
+  // ✅ Método resolveStore completamente flexible
   private async resolveStore(
     tx: Prisma.TransactionClient,
-    storeLegacyId: number,
-  ): Promise<string> {
-    const store = await tx.stores.findFirst({
-      where: { legacy_store_id: BigInt(storeLegacyId) },
-      select: { id: true },
-    });
-    if (!store) {
-      throw new Error(`Store no encontrado con legacy_id: ${storeLegacyId}`);
+    storeLegacyId?: number,
+    storeId?: string,
+  ): Promise<string | null> {
+    // Opción 1: Viene el UUID directo
+    if (storeId) {
+      const store = await tx.stores.findUnique({
+        where: { id: storeId },
+        select: { id: true },
+      });
+      if (!store) {
+        throw new Error(
+          `[CREATE_PRODUCT] Store no encontrado con id: ${storeId}`,
+        );
+      }
+      return store.id;
     }
-    return store.id;
+
+    // Opción 2: Viene el legacy_id
+    if (storeLegacyId) {
+      const store = await tx.stores.findFirst({
+        where: { legacy_store_id: BigInt(storeLegacyId) },
+        select: { id: true },
+      });
+      if (!store) {
+        throw new Error(
+          `[CREATE_PRODUCT] Store no encontrado con legacy_store_id: ${storeLegacyId}`,
+        );
+      }
+      return store.id;
+    }
+
+    // Opción 3: Sin store (producto global o sin tienda asociada)
+    logger.info(
+      "[CREATE_PRODUCT] Producto sin store asociado (producto global o sin tienda).",
+    );
+    return null;
   }
 
   private async resolveCategory(
     tx: Prisma.TransactionClient,
-    storeId: string,
+    storeId: string | null, // ✅ Aceptar null
     category?: ProductCategoryPayload | null,
   ): Promise<string | null> {
-    if (!category?.name) return null;
+    // Si no hay storeId, no se puede crear categoría
+    if (!storeId || !category) return null;
 
-    let cat = await tx.categories.findFirst({
-      where: { store_id: storeId, name: category.name },
+    if (!category.name) {
+      logger.warn("[CREATE_PRODUCT] category sin id ni name, se omite.");
+      return null;
+    }
+
+    const normalizedName = category.name.trim();
+    let existing = await tx.categories.findFirst({
+      where: { store_id: storeId, name: normalizedName },
       select: { id: true },
     });
 
-    if (!cat) {
-      cat = await tx.categories.create({
+    if (!existing) {
+      logger.info(
+        `[CREATE_PRODUCT] Creando categoría "${normalizedName}" para tienda ${storeId}`,
+      );
+      existing = await tx.categories.create({
         data: {
           id: randomUUID(),
           store_id: storeId,
-          name: category.name,
-          is_active: true,
+          parent_id: category.parentId ?? null,
+          name: normalizedName,
+          is_active: category.isActive ?? true,
         },
         select: { id: true },
       });
     }
-    return cat.id;
+    return existing.id;
   }
 
   private async resolveCatalog(
     tx: Prisma.TransactionClient,
-    storeId: string,
-    catalog?: ProductCatalogPayload | null,
+    storeId: string | null, // ✅ Aceptar null
+    catalogRef?: ProductCatalogPayload | null,
   ): Promise<string | null> {
-    if (!catalog?.name) return null;
+    // Si no hay storeId, no se puede crear catálogo
+    if (!storeId || !catalogRef) return null;
 
-    const normalizedName = catalog.name.trim();
+    if (!catalogRef.name) {
+      logger.warn("[CREATE_PRODUCT] catalog sin id ni name, se omite.");
+      return null;
+    }
 
+    const normalizedName = catalogRef.name.trim();
     let existing = await tx.catalogs.findFirst({
-      where: {
-        name: normalizedName,
-        store_id: storeId,
-      },
+      where: { store_id: storeId, name: normalizedName },
       select: { id: true },
     });
 
@@ -254,47 +244,13 @@ export class CreateProductHandler {
       existing = await tx.catalogs.create({
         data: {
           id: randomUUID(),
+          store_id: storeId,
           name: normalizedName,
-          is_public: catalog.isPublic ?? false,
-          // ❌ QUITAR: is_active: true,
-          stores: {
-            connect: { id: storeId },
-          },
+          is_public: catalogRef.isPublic ?? false,
         },
         select: { id: true },
       });
     }
-
     return existing.id;
-  }
-
-  private async resolveWarehouse(
-    tx: Prisma.TransactionClient,
-    storeId: string,
-    legacyWarehouseId: number,
-  ): Promise<string> {
-    let warehouse = await tx.warehouses.findFirst({
-      where: {
-        store_id: storeId,
-        warehouse_legacy_id: BigInt(legacyWarehouseId),
-      },
-      select: { id: true },
-    });
-
-    if (!warehouse) {
-      warehouse = await tx.warehouses.findFirst({
-        where: { store_id: storeId, is_active: true },
-        orderBy: { created_at: "asc" },
-        select: { id: true },
-      });
-    }
-
-    if (!warehouse) {
-      throw new Error(
-        `No se encontró warehouse para store ${storeId} con legacy_id ${legacyWarehouseId}`,
-      );
-    }
-
-    return warehouse.id;
   }
 }
