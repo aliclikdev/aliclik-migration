@@ -1,5 +1,6 @@
+// src/use-cases/handlers/products/create-product-variant.handler.ts
+
 import { PrismaClient, Prisma } from "@prisma/client";
-import { randomUUID } from "crypto";
 import { ProductVariantMigrationMessage } from "../../../types/sqs-migration.types";
 import { logger } from "../../../utils/logger";
 
@@ -15,9 +16,9 @@ export class CreateProductVariantHandler {
       );
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      // 1. Resolver producto padre por legacyProductId
-      const product = await tx.products.findFirst({
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // ✅ CORREGIDO: Buscar producto por legacy_product_id (BIGINT)
+      const product = await tx.product.findFirst({
         where: {
           legacy_product_id: variant.legacyProductId
             ? BigInt(variant.legacyProductId)
@@ -32,8 +33,8 @@ export class CreateProductVariantHandler {
         );
       }
 
-      // 2. Upsert de la variante
-      let variantRecord = await tx.product_variants.findFirst({
+      // ✅ CORREGIDO: Buscar variante existente con BIGINT
+      let variantRecord = await tx.productVariant.findFirst({
         where: {
           product_id: product.id,
           legacy_variant_id: variant.legacyVariantId
@@ -45,7 +46,6 @@ export class CreateProductVariantHandler {
 
       const variantData = {
         name: variant.name.trim(),
-        is_active: true,
         product_id: product.id,
         legacy_variant_id: variant.legacyVariantId
           ? BigInt(variant.legacyVariantId)
@@ -53,16 +53,13 @@ export class CreateProductVariantHandler {
       };
 
       if (variantRecord) {
-        variantRecord = await tx.product_variants.update({
+        variantRecord = await tx.productVariant.update({
           where: { id: variantRecord.id },
           data: variantData,
         });
       } else {
-        variantRecord = await tx.product_variants.create({
-          data: {
-            id: randomUUID(),
-            ...variantData,
-          },
+        variantRecord = await tx.productVariant.create({
+          data: variantData,
         });
       }
 
@@ -70,12 +67,12 @@ export class CreateProductVariantHandler {
         `[CREATE_PRODUCT_VARIANT] Variante "${variant.name}" procesada (id: ${variantRecord.id})`,
       );
 
-      // 3. Upsert de las opciones de la variante (Talla, Color, etc.)
+      // ✅ CORREGIDO: Procesar opciones con BIGINTs
       if (variant.options && variant.options.length > 0) {
         for (const option of variant.options) {
           if (!option.name?.trim()) continue;
 
-          const optionRecord = await tx.variant_options.findFirst({
+          const optionRecord = await tx.variantOption.findFirst({
             where: {
               variant_id: variantRecord.id,
               legacy_option_id: option.legacyOptionId
@@ -86,21 +83,18 @@ export class CreateProductVariantHandler {
           });
 
           if (optionRecord) {
-            await tx.variant_options.update({
+            await tx.variantOption.update({
               where: { id: optionRecord.id },
               data: {
                 name: option.name.trim(),
-                is_active: true,
                 updated_at: new Date(),
               },
             });
           } else {
-            await tx.variant_options.create({
+            await tx.variantOption.create({
               data: {
-                id: randomUUID(),
                 variant_id: variantRecord.id,
                 name: option.name.trim(),
-                is_active: true,
                 legacy_option_id: option.legacyOptionId
                   ? BigInt(option.legacyOptionId)
                   : null,
@@ -108,7 +102,6 @@ export class CreateProductVariantHandler {
             });
           }
         }
-
         logger.info(
           `[CREATE_PRODUCT_VARIANT] ${variant.options.length} opciones procesadas para variante ${variantRecord.id}`,
         );

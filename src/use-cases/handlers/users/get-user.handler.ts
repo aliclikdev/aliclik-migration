@@ -1,4 +1,5 @@
-// src/use-cases/handlers/users/create-user.handler.ts
+// src/use-cases/handlers/users/get-user.handler.ts
+
 import { PrismaClient } from "@prisma/client";
 import {
   UserMigrationMessage,
@@ -10,7 +11,7 @@ import { CreateUserHandler } from "./create-user.handler";
 export class GetUserHandler {
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly createUserhandler: CreateUserHandler,
+    private readonly createUserHandler: CreateUserHandler,
   ) {}
 
   async execute(payload: UserMigrationMessage): Promise<UserMigrationResponse> {
@@ -20,22 +21,40 @@ export class GetUserHandler {
       `[GET_USER] Consultando usuario: ${userData.email || userData.cognitoSub}`,
     );
 
-    // Validar que tengamos al menos un identificador
     if (!userData.email && !userData.cognitoSub) {
       throw new Error("[GET_USER] Se requiere email o cognitoSub");
     }
 
-    const whereClause: any = {};
-    if (userData.email) whereClause.email = userData.email;
-    if (userData.cognitoSub) whereClause.cognito_sub = userData.cognitoSub;
+    // ============================================
+    // 1. BUSCAR USUARIO EXISTENTE
+    // ============================================
 
-    // Consulta optimizada: Solo traemos lo necesario
+    const whereClause: any = {};
+    if (userData.email) {
+      whereClause.email = userData.email;
+    }
+    if (userData.cognitoSub) {
+      whereClause.cognito_sub = userData.cognitoSub;
+    }
+
+    // ✅ CORREGIDO: Incluir relaciones para obtener datos completos
     const includeClause = {
-      person: true, // Traemos persona plana, sin anidar ubigeos completos
-      memberships: {
+      persons: {
+        select: {
+          id: true,
+          first_name: true,
+          last_name: true,
+          document_number: true,
+          document_type_id: true,
+          birth_date: true,
+          ubigeo_id: true,
+          address: true,
+        },
+      },
+      store_memberships: {
         where: { is_active: true },
         include: {
-          store: {
+          stores: {
             select: {
               id: true,
               name: true,
@@ -43,9 +62,10 @@ export class GetUserHandler {
               ruc: true,
               logo_url: true,
               is_active: true,
+              legacy_store_id: true,
             },
           },
-          role: {
+          roles: {
             select: {
               id: true,
               name: true,
@@ -56,44 +76,92 @@ export class GetUserHandler {
       },
     } as const;
 
-    let existingUser = await this.prisma.users.findFirst({
+    let existingUser = await this.prisma.user.findFirst({
       where: whereClause,
       include: includeClause,
     });
+
+    // ============================================
+    // 2. SI NO EXISTE, MIGRAR EN EL MOMENTO (LAZY MIGRATION)
+    // ============================================
 
     if (!existingUser) {
       logger.warn(
         `[GET_USER] Usuario no encontrado: ${userData.email || userData.cognitoSub}. Migrando en el momento (lazy migration)...`,
       );
 
-      await this.createUserhandler.execute(payload);
+      try {
+        // ✅ CORREGIDO: Ejecutar createUserHandler para migrar el usuario
+        await this.createUserHandler.execute(payload);
 
-      existingUser = await this.prisma.users.findFirst({
-        where: whereClause,
-        include: includeClause,
-      });
+        // ✅ CORREGIDO: Buscar nuevamente después de la migración
+        existingUser = await this.prisma.user.findFirst({
+          where: whereClause,
+          include: includeClause,
+        });
 
-      if (!existingUser) {
-        logger.error(
-          `[GET_USER] La migración en el momento no pudo crear al usuario: ${userData.email || userData.cognitoSub}`,
+        if (!existingUser) {
+          logger.error(
+            `[GET_USER] La migración en el momento no pudo crear al usuario: ${userData.email || userData.cognitoSub}`,
+          );
+          return {
+            eventId,
+            status: "NOT_FOUND",
+          };
+        }
+
+        logger.info(
+          `[GET_USER] Usuario migrado en el momento con éxito: ${userData.email || userData.cognitoSub}`,
         );
-        return { eventId, status: "NOT_FOUND" };
+      } catch (error) {
+        logger.error(
+          `[GET_USER] Error durante la migración en el momento:`,
+          error,
+        );
+        return {
+          eventId,
+          status: "NOT_FOUND",
+        };
       }
-
-      logger.info(
-        `[GET_USER] Usuario migrado en el momento con éxito: ${userData.email || userData.cognitoSub}`,
-      );
     }
 
-    // Construcción de respuesta tipada
-    const personData = existingUser.person;
+    // ============================================
+    // 3. CONSTRUIR RESPUESTA
+    // ============================================
 
-    return {
+    const personData = existingUser.persons;
+
+    // ✅ CORREGIDO: Mapear membresías con tipos correctos (bigint)
+    const memberships = (existingUser.store_memberships || []).map(
+      (m: any) => ({
+        id: m.id, // ✅ bigint
+        store: {
+          id: m.stores?.id || "", // ✅ bigint (convertido a string para compatibilidad)
+          name: m.stores?.name || "",
+          businessName: m.stores?.business_name || undefined,
+          ruc: m.stores?.ruc || undefined,
+          logoUrl: m.stores?.logo_url || undefined,
+          isActive: m.stores?.is_active ?? true,
+        },
+        role: {
+          id: m.roles?.id || "", // ✅ bigint (convertido a string para compatibilidad)
+          name: m.roles?.name || "",
+          description: m.roles?.description || undefined,
+        },
+        isOwner: m.is_owner,
+        employeeCode: m.employee_code || undefined,
+        hireDate: m.hire_date || undefined,
+        isActive: m.is_active ?? true,
+      }),
+    );
+
+    // ✅ CORREGIDO: Construir respuesta con tipos correctos
+    const response: UserMigrationResponse = {
       eventId,
       status: "SUCCESS",
       data: {
         user: {
-          id: existingUser.id,
+          id: existingUser.id, // ✅ bigint
           email: existingUser.email,
           cognitoSub: existingUser.cognito_sub || "",
           isActive: existingUser.is_active ?? true,
@@ -111,27 +179,15 @@ export class GetUserHandler {
               address: personData.address || undefined,
             }
           : null,
-        memberships: (existingUser.memberships || []).map((m: any) => ({
-          id: m.id,
-          store: {
-            id: m.store?.id || "",
-            name: m.store?.name || "",
-            businessName: m.store?.business_name || undefined,
-            ruc: m.store?.ruc || undefined,
-            logoUrl: m.store?.logo_url || undefined,
-            isActive: m.store?.is_active ?? true,
-          },
-          role: {
-            id: m.role?.id || "",
-            name: m.role?.name || "",
-            description: m.role?.description || undefined,
-          },
-          isOwner: m.is_owner,
-          employeeCode: m.employee_code || undefined,
-          hireDate: m.hire_date || undefined,
-          isActive: m.is_active ?? true,
-        })),
+        memberships: memberships,
+        termsStatus: null, // ✅ Se puede implementar si es necesario
       },
     };
+
+    logger.info(
+      `[GET_USER] Usuario encontrado: ${existingUser.email} (id: ${existingUser.id})`,
+    );
+
+    return response;
   }
 }

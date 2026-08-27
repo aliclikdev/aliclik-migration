@@ -1,3 +1,9 @@
+// src/types/sqs-migration.types.ts
+
+// ============================================
+// 1. TIPOS DE EVENTOS
+// ============================================
+
 export type MigrationEventType =
   | "CREATE_USER"
   | "UPDATE_USER"
@@ -8,10 +14,15 @@ export type MigrationEventType =
   | "CREATE_PRODUCT"
   | "CREATE_PRODUCT_VARIANT"
   | "CREATE_SKU";
+
+// ============================================
+// 2. STORE Y MEMBRESÍAS (con bigint)
+// ============================================
+
 export interface StoreWithDetails {
-  id: string;
+  id: bigint; // ✅ CORREGIDO: string → bigint
   name: string;
-  legacyStoreId?: number;
+  legacyStoreId?: number; // ✅ Este puede ser number porque viene del legacy
   businessName?: string;
   ruc?: string;
   logoUrl?: string | null | undefined;
@@ -27,7 +38,7 @@ export interface StoreWithDetails {
     accountVerified?: boolean;
   };
   membership?: {
-    roleId: string;
+    roleId: bigint; // ✅ CORREGIDO: string → bigint
     roleName: string;
     isOwner: boolean;
     employeeCode?: string;
@@ -35,6 +46,11 @@ export interface StoreWithDetails {
     isActive: boolean;
   };
 }
+
+// ============================================
+// 3. USER MIGRATION MESSAGE
+// ============================================
+
 export interface UserMigrationMessage {
   eventId: string;
   eventType: MigrationEventType;
@@ -42,7 +58,7 @@ export interface UserMigrationMessage {
   sourceSystem: "ALICLIK_LEGACY_HEROKU";
   replyToQueueUrl?: string;
   person: {
-    legacyPersonId?: number;
+    legacyPersonId?: number; // ✅ Este es el ID del legacy (number)
     firstName: string;
     lastName: string;
     documentType?: "DNI" | "RUC" | "CE" | "PASSPORT";
@@ -52,7 +68,7 @@ export interface UserMigrationMessage {
     address?: string;
   };
   user: {
-    legacyUserId?: number;
+    legacyUserId?: number; // ✅ Este es el ID del legacy (number)
     email: string;
     cognitoSub: string;
     isActive: boolean;
@@ -61,7 +77,7 @@ export interface UserMigrationMessage {
   store: StoreWithDetails;
   termsAcceptance?:
     | {
-        termsId: string;
+        termsId: bigint; // ✅ CORREGIDO: string → bigint
         version: number;
         ipAddress?: string;
         userAgent?: string;
@@ -70,10 +86,15 @@ export interface UserMigrationMessage {
     | null
     | undefined;
 }
+
+// ============================================
+// 4. STORE MEMBERSHIP DETAILS
+// ============================================
+
 export interface StoreMembershipDetails {
-  id: string;
+  id: bigint; // ✅ CORREGIDO: string → bigint
   store: {
-    id: string;
+    id: bigint; // ✅ CORREGIDO: string → bigint
     name: string;
     businessName?: string;
     ruc?: string;
@@ -81,7 +102,7 @@ export interface StoreMembershipDetails {
     isActive: boolean;
   };
   role: {
-    id: string;
+    id: bigint; // ✅ CORREGIDO: string → bigint
     name: string;
     description?: string;
   };
@@ -90,12 +111,17 @@ export interface StoreMembershipDetails {
   hireDate?: Date;
   isActive: boolean;
 }
+
+// ============================================
+// 5. USER MIGRATION RESPONSE
+// ============================================
+
 export interface UserMigrationResponse {
   eventId: string;
   status: "SUCCESS" | "ALREADY_PROCESSED" | "NOT_FOUND";
   data?: {
     user: {
-      id: string;
+      id: bigint; // ✅ CORREGIDO: string → bigint
       email: string;
       cognitoSub: string;
       isActive: boolean;
@@ -113,11 +139,11 @@ export interface UserMigrationResponse {
         }
       | null
       | undefined;
-    memberships: StoreMembershipDetails[];
+    memberships: StoreMembershipDetails[]; // ✅ Ahora usa bigint
     termsStatus?:
       | {
           hasActiveTerms: boolean;
-          termsId: string | null;
+          termsId: bigint | null; // ✅ CORREGIDO: string → bigint
           currentVersion: number | null;
           hasAccepted: boolean;
           acceptedVersion: number | null;
@@ -126,18 +152,26 @@ export interface UserMigrationResponse {
       | undefined;
   };
 }
+
+// ============================================
+// 6. PRODUCT TYPES
+// ============================================
+
 export type ProductMigrationEventType = "CREATE_PRODUCT";
+
 export interface ProductCategoryPayload {
-  id?: string;
+  id?: bigint | null; // ✅ CORREGIDO: string → bigint | null
   name?: string;
-  parentId?: string | null;
+  parentId?: bigint | null; // ✅ CORREGIDO: string → bigint | null
   isActive?: boolean;
 }
+
 export interface ProductCatalogPayload {
-  id?: string;
+  id?: bigint | null; // ✅ CORREGIDO: string → bigint | null
   name?: string;
   isPublic?: boolean;
 }
+
 export interface ProductImagePayload {
   url: string;
   title?: string;
@@ -151,37 +185,11 @@ export interface ProductImagePayload {
   mimeType?: string;
   isActive?: boolean;
 }
-export interface SkuPayload {
-  legacySkuId?: number;
-  skuCode: string;
-  ean?: string;
-  regularPrice: number;
-  salesPrice: number;
-  purchasePrice: number;
-  dropPrice?: number;
-  heightCm?: number;
-  widthCm?: number;
-  lengthCm?: number;
-  weightKg?: number;
-  stockMin?: number;
-  stockMax?: number;
-  trackStock?: boolean;
-  allowBackorder?: boolean;
-  isActive?: boolean;
-  warehouseSkus?: WarehouseSkuPayload[];
-}
-export interface WarehouseSkuPayload {
-  legacyWarehouseSkuId?: number;
-  legacyWarehouseId: number;
-  warehouseName?: string;
-  stockPhysical?: number;
-  stockVirtual?: number;
-  stockReserved?: number;
-}
+
 export interface ProductPayload {
-  legacyProductId?: number;
-  storeLegacyId?: number;
-  storeId?: string;
+  legacyProductId?: number; // ✅ Este es el ID del legacy (number)
+  storeLegacyId?: number; // ✅ Este es el ID del legacy (number)
+  storeId?: bigint | null; // ✅ CORREGIDO: string → bigint | null
   category?: ProductCategoryPayload | null;
   catalog?: ProductCatalogPayload | null;
   name: string;
@@ -203,6 +211,7 @@ export interface ProductPayload {
   statusCode?: string;
   isActive?: boolean;
 }
+
 export interface ProductMigrationMessage {
   eventId: string;
   eventType: ProductMigrationEventType;
@@ -212,16 +221,23 @@ export interface ProductMigrationMessage {
   product: ProductPayload;
   images?: ProductImagePayload[];
 }
+
+// ============================================
+// 7. PRODUCT VARIANT TYPES
+// ============================================
+
 export interface VariantOptionPayload {
-  legacyOptionId?: number;
+  legacyOptionId?: number; // ✅ Este es el ID del legacy (number)
   name: string;
 }
+
 export interface VariantPayload {
-  legacyVariantId?: number;
-  legacyProductId: number;
+  legacyVariantId?: number; // ✅ Este es el ID del legacy (number)
+  legacyProductId: number; // ✅ Este es el ID del legacy (number)
   name: string;
   options?: VariantOptionPayload[];
 }
+
 export interface ProductVariantMigrationMessage {
   eventId: string;
   eventType: string;
@@ -230,25 +246,38 @@ export interface ProductVariantMigrationMessage {
   replyToQueueUrl?: string;
   variant: VariantPayload;
 }
+
+// ============================================
+// 8. SKU TYPES
+// ============================================
+
 export interface SkuVariantOptionRef {
-  legacyOptionId?: number;
-  variantOptionId?: string;
+  legacyOptionId?: number; // ✅ number (ID del legacy)
+  variantOptionId?: bigint; // ✅ CORREGIDO: string → bigint
   name?: string;
 }
+
 export interface SkuMigrationPayload {
-  legacySkuId?: number;
-  legacyProductId: number;
+  legacySkuId?: number; // ✅ number (ID del legacy)
+  legacyProductId: number; // ✅ number (ID del legacy)
   skuCode: string;
   ean?: string;
   regularPrice?: number;
   salesPrice?: number;
   purchasePrice?: number;
+  dropPrice?: number;
+  heightCm?: number;
+  widthCm?: number;
+  lengthCm?: number;
+  weightKg?: number;
   stockMin?: number;
   stockMax?: number;
+  trackStock?: boolean;
+  allowBackorder?: boolean;
   isActive?: boolean;
   warehouseStocks?: Array<{
-    legacyWarehouseId?: number;
-    warehouseId?: string;
+    legacyWarehouseId: number; // ✅ number (ID del legacy)
+    warehouseId?: bigint; // ✅ CORREGIDO: string → bigint
     warehouseName?: string;
     stockPhysical?: number;
     stockVirtual?: number;
@@ -257,10 +286,11 @@ export interface SkuMigrationPayload {
   }>;
   variantOptions?: Array<{
     legacyOptionId?: number;
-    variantOptionId?: string;
+    variantOptionId?: bigint; // ✅ CORREGIDO: string → bigint
     name?: string;
   }>;
 }
+
 export interface SkuMigrationMessage {
   eventId: string;
   eventType: string;
@@ -269,6 +299,11 @@ export interface SkuMigrationMessage {
   replyToQueueUrl?: string;
   sku: SkuMigrationPayload;
 }
+
+// ============================================
+// 9. UNION TYPE
+// ============================================
+
 export type SqsMigrationMessage =
   | UserMigrationMessage
   | ProductMigrationMessage

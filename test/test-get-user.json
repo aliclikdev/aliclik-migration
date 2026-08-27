@@ -1,51 +1,34 @@
 {
-  "eventId": "evt-get-user-20260819-test",
+  "eventId": "test-event-get-user-001",
   "eventType": "GET_USER",
-  "timestamp": "2026-08-19T15:30:00.000Z",
+  "timestamp": "2026-08-27T16:00:00.000Z",
   "sourceSystem": "ALICLIK_LEGACY_HEROKU",
-  "replyToQueueUrl": "https://sqs.us-east-1.amazonaws.com/417609992114/user-response-queue",
+  "replyToQueueUrl": "https://sqs.us-east-1.amazonaws.com/123456789012/user-response-queue",
   "person": {
-    "legacyPersonId": 1001,
-    "firstName": "Juan Carlos",
-    "lastName": "Pérez Rodríguez",
+    "legacyPersonId": 12345,
+    "firstName": "Juan",
+    "lastName": "Perez",
     "documentType": "DNI",
-    "documentNumber": "70123458",
+    "documentNumber": "12345678",
     "ubigeoCode": "150101",
-    "address": "Av. Javier Prado 123, San Isidro, Lima"
+    "address": "Av. Principal 123"
   },
   "user": {
-    "legacyUserId": 5001,
-    "email": "juan.perez2065@example.com",
-    "cognitoSub": "sub-uuid-juan-perez-099",
-    "isActive": true,
-    "lastLoginAt": "2026-08-13T18:45:00.000Z"
+    "legacyUserId": 67890,
+    "email": "juan.perez@example.com",
+    "cognitoSub": "cognito-sub-123",
+    "isActive": true
   },
   "store": {
-    "id": "uuid-store-abc-123",
-    "name": "Tienda Principal",
-    "legacyStoreId": 65921,
-    "businessName": "Comercializadora XYZ SAC",
-    "ruc": "20123456789",
-    "logoUrl": "https://s3.amazonaws.com/bucket/logo.png",
+    "id": 1001,
+    "legacyStoreId": 1001,
+    "name": "Tienda de Prueba",
     "isActive": true,
-    "settings": {
-      "companyPrefix": "ALC",
-      "currencyCode": "PEN",
-      "timezone": "America/Lima",
-      "defaultShippingCost": 10.50,
-      "motorizedWorkloadLimit": 25,
-      "supportPhone": "+51987654321",
-      "supportEmail": "soporte@tienda.com",
-      "isEmailTransferVerified": true
-    },
     "membership": {
-      "roleId": "role-uuid-admin-001",
+      "roleId": 1,
       "roleName": "ADMIN_STORE",
       "isOwner": true,
-      "employeeCode": "EMP001",
-      "hireDate": "2025-01-15T00:00:00.000Z",
       "isActive": true
     }
-  },
-  "termsAcceptance": null
+  }
 }

@@ -1,6 +1,5 @@
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -8,717 +7,346 @@ datasource db {
   url      = env("AURORA_DATABASE_URL")
 }
 
-model DocumentType {
-  id            String    @id @default(uuid()) @db.Char(36)
-  code          String    @unique(map: "code") @db.VarChar(20)
-  name          String    @db.VarChar(50)
-  country_id    String?   @db.Char(36)
-  description   String?   @db.Text
-  regex_pattern String?   @db.VarChar(100)
-  is_active     Boolean   @default(true)
-  created_at    DateTime  @default(now()) @db.Timestamp(0)
-  updated_at    DateTime  @default(now()) @updatedAt @db.Timestamp(0)
-  persons       persons[]
-
-  @@map("document_types")
-}
-
-model Ubigeo {
-  id                  String                @id @default(uuid()) @db.Char(36)
-  country_id          String?               @db.Char(36)
-  parent_id           String?               @db.Char(36)
-  level_id            String?               @db.Char(36)
-  name                String                @db.VarChar(200)
-  code                String?               @db.VarChar(20)
-  is_active           Boolean?              @default(true)
-  courier_coverages   courier_coverages[]
-  couriers            couriers[]
-  customer_addresses  customer_addresses[]
-  motorized_coverages motorized_coverages[]
-  order_shippings     order_shippings[]
-  persons             persons[]
-  stores              stores[]
-  countries           countries?            @relation(fields: [country_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ubigeos_ibfk_1")
-  ubigeos             Ubigeo?               @relation("ubigeosToubigeos", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ubigeos_ibfk_2")
-  other_ubigeos       Ubigeo[]              @relation("ubigeosToubigeos")
-  ubigeos_levels      ubigeos_levels?       @relation(fields: [level_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ubigeos_ibfk_3")
-
-  @@index([country_id, level_id], map: "idx_ubigeos_country_level")
-  @@index([parent_id], map: "idx_ubigeos_parent")
-  @@index([level_id], map: "level_id")
-  @@map("ubigeos")
-}
-
-model stores {
-  id                     String                   @id @default(uuid()) @db.Char(36)
-  legacy_store_id        BigInt?
-  name                   String                   @db.VarChar(255)
-  business_name          String?                  @db.VarChar(255)
-  ruc                    String?                  @db.VarChar(20)
-  logo_url               String?                  @db.Text
-  country_id             String?                  @db.Char(36)
-  ubigeo_id              String?                  @db.Char(36)
-  address                String?                  @db.Text
-  timezone               String?                  @db.VarChar(50)
-  currency_code          String?                  @db.Char(3)
-  is_active              Boolean?                 @default(true)
-  created_at             DateTime?                @db.Timestamp(0)
-  updated_at             DateTime?                @updatedAt @db.Timestamp(0)
-  catalogs               catalogs[]
-  categories             categories[]
-  customers              customers[]
-  incident_types         incident_types[]
-  integrations           integrations[]
-  liquidations           liquidations[]
-  motorized_liquidations motorized_liquidations[]
-  orders                 orders[]
-  products               products[]
-  skus                   skus[]
-  memberships            store_memberships[]
-  settings               store_settings?
-  countries              countries?               @relation(fields: [country_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "stores_ibfk_1")
-  ubigeos                Ubigeo?                  @relation(fields: [ubigeo_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "stores_ibfk_2")
-  wallets                wallets[]
-  warehouse_skus         warehouse_skus[]
-  warehouses             warehouses[]
-
-  @@unique([ruc, country_id], map: "idx_store_fiscal_unique")
-  @@index([country_id, is_active], map: "idx_store_by_country")
-  @@index([ubigeo_id], map: "ubigeo_id")
-  @@map("stores")
-}
-
-model roles {
-  id               String              @id @default(uuid()) @db.Char(36)
-  name             String              @unique(map: "name") @db.VarChar(50)
-  description      String?             @db.VarChar(255)
-  is_active        Boolean?            @default(true)
-  created_at       DateTime?           @db.Timestamp(0)
-  role_permissions role_permissions[]
-  memberships      store_memberships[]
-
-  @@map("roles")
-}
-
-model users {
-  id                                                            String                            @id @default(uuid()) @db.Char(36)
-  person_id                                                     String?                           @db.Char(36)
-  email                                                         String                            @unique(map: "email") @db.VarChar(255)
-  cognito_sub                                                   String?                           @unique(map: "cognito_sub") @db.VarChar(255)
-  is_active                                                     Boolean?                          @default(true)
-  last_login_at                                                 DateTime?                         @db.Timestamp(0)
-  created_at                                                    DateTime?                         @db.Timestamp(0)
-  updated_at                                                    DateTime?                         @updatedAt @db.Timestamp(0)
-  kardex                                                        kardex[]
-  liquidation_activity_log                                      liquidation_activity_log[]
-  liquidation_exports                                           liquidation_exports[]
-  motorized_incidents_motorized_incidents_reported_by_idTousers motorized_incidents[]             @relation("motorized_incidents_reported_by_idTousers")
-  motorized_incidents_motorized_incidents_resolved_by_idTousers motorized_incidents[]             @relation("motorized_incidents_resolved_by_idTousers")
-  motorized_liquidation_evidences                               motorized_liquidation_evidences[]
-  order_status_history                                          order_status_history[]
-  memberships                                                   store_memberships[]
-  acceptances                                                   user_terms_acceptances[]
-  person                                                        persons?                          @relation(fields: [person_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "users_ibfk_1")
-  wallet_transactions                                           wallet_transactions[]
-
-  @@index([person_id], map: "person_id")
-  @@map("users")
-}
-
-model store_memberships {
-  id            String    @id @default(uuid()) @db.Char(36)
-  user_id       String?   @db.Char(36)
-  store_id      String?   @db.Char(36)
-  role_id       String?   @db.Char(36)
-  is_owner      Boolean   @default(false)
-  employee_code String?   @db.VarChar(50)
-  hire_date     DateTime? @db.Date
-  is_active     Boolean?  @default(true)
-  created_at    DateTime? @default(now()) @db.Timestamp(0)
-  updated_at    DateTime? @default(now()) @db.Timestamp(0)
-  user          users?    @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "store_memberships_ibfk_1")
-  store         stores?   @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "store_memberships_ibfk_2")
-  role          roles?    @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "store_memberships_ibfk_3")
-
-  @@unique([user_id, store_id], name: "idx_user_store_unique")
-  @@index([is_active], map: "idx_store_membership_active")
-  @@index([store_id, role_id], map: "idx_store_membership_role")
-  @@index([role_id], map: "role_id")
-  @@map("store_memberships")
-}
-
-model Idempotency {
-  id              BigInt   @id @default(autoincrement())
-  idempotency_key String   @unique(map: "idempotency_key_key") @db.VarChar(255)
-  status          String   @default("PROCESSED") @db.VarChar(30)
-  processed_at    DateTime @default(now())
-  metadata        Json?
-  created_at      DateTime @default(now())
-
-  @@index([status, created_at], map: "idempotency_status_createdAt_idx")
-  @@map("idempotency")
-}
-
-model persons {
-  id                     String                   @id @default(uuid()) @db.Char(36)
-  legacy_person_id       BigInt?
-  first_name             String?                  @db.VarChar(100)
-  last_name              String?                  @db.VarChar(100)
-  document_type_id       String?                  @db.Char(36)
-  document_number        String?                  @unique(map: "document_number") @db.VarChar(20)
-  birth_date             DateTime?                @db.Date
-  ubigeo_id              String?                  @db.Char(36)
-  address                String?                  @db.Text
-  created_at             DateTime?                @db.Timestamp(0)
-  updated_at             DateTime?                @updatedAt @db.Timestamp(0)
-  customers              customers[]
-  motorized_liquidations motorized_liquidations[]
-  motorized_profiles     motorized_profiles?
-  order_deliveries       order_deliveries[]
-  document_types         DocumentType?            @relation(fields: [document_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "persons_ibfk_1")
-  ubigeos                Ubigeo?                  @relation(fields: [ubigeo_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "persons_ibfk_2")
-  users                  users[]
-
-  @@unique([document_type_id, document_number], map: "idx_document_unique")
-  @@index([ubigeo_id], map: "ubigeo_id")
-  @@map("persons")
-}
-
-model catalogs {
-  id         String     @id @default(uuid()) @db.Char(36)
-  store_id   String?    @db.Char(36)
-  name       String?    @db.VarChar(255)
-  is_public  Boolean?   @default(false)
-  created_at DateTime?  @db.Timestamp(0)
-  updated_at DateTime?  @db.Timestamp(0)
-  stores     stores?    @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "catalogs_ibfk_1")
-  products   products[]
-
-  @@index([store_id], map: "idx_catalog_by_store")
-  @@map("catalogs")
-}
-
-model categories {
-  id               String       @id @default(uuid()) @db.Char(36)
-  store_id         String?      @db.Char(36)
-  parent_id        String?      @db.Char(36)
-  name             String?      @db.VarChar(255)
-  is_active        Boolean?     @default(true)
-  created_at       DateTime?    @db.Timestamp(0)
-  updated_at       DateTime?    @db.Timestamp(0)
-  stores           stores?      @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "categories_ibfk_1")
-  categories       categories?  @relation("categoriesTocategories", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "categories_ibfk_2")
-  other_categories categories[] @relation("categoriesTocategories")
-  products         products[]
-
-  @@index([store_id], map: "idx_categories_by_store")
-  @@index([store_id, is_active], map: "idx_categories_by_store_active")
-  @@index([parent_id], map: "idx_categories_parent")
-  @@map("categories")
-}
-
-model countries {
-  id              String            @id @default(uuid()) @db.Char(36)
-  name            String            @db.VarChar(100)
-  iso_code        String            @unique(map: "iso_code") @db.Char(3)
-  currency_code   String?           @db.Char(3)
-  timezone        String?           @db.VarChar(50)
-  is_active       Boolean?          @default(true)
-  couriers        couriers[]
-  payment_methods payment_methods[]
-  stores          stores[]
+model Country {
+  id              BigInt          @id @default(autoincrement())
+  name            String          @db.VarChar(100)
+  iso_code        String          @unique @db.Char(3)
+  currency_code   String?         @db.Char(3)
+  timezone        String?         @db.VarChar(50)
+  is_active       Boolean?        @default(true)
+  couriers        Courier[]
+  DocumentType    DocumentType[]
+  payment_methods PaymentMethod[]
+  stores          Store[]
   ubigeos         Ubigeo[]
-  ubigeos_levels  ubigeos_levels[]
+  ubigeos_levels  UbigeosLevel[]
 
   @@map("countries")
 }
 
-model courier_coverages {
-  id                 String    @id @default(uuid()) @db.Char(36)
-  courier_id         String?   @db.Char(36)
-  ubigeo_id          String?   @db.Char(36)
-  delivery_cost      Decimal?  @db.Decimal(12, 2)
-  return_cost        Decimal?  @db.Decimal(12, 2)
-  additional_cost    Decimal?  @db.Decimal(12, 2)
-  allow_cod_override Boolean?  @default(false)
-  max_cod_amount     Decimal?  @db.Decimal(12, 2)
-  is_active          Boolean?  @default(true)
-  created_at         DateTime? @db.Timestamp(0)
-  updated_at         DateTime? @db.Timestamp(0)
-  couriers           couriers? @relation(fields: [courier_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "courier_coverages_ibfk_1")
-  ubigeos            Ubigeo?   @relation(fields: [ubigeo_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "courier_coverages_ibfk_2")
+model DocumentType {
+  id            BigInt    @id @default(autoincrement())
+  code          String    @unique @db.VarChar(20)
+  name          String    @db.VarChar(50)
+  country_id    BigInt?   @map("country_id")
+  description   String?   @db.Text
+  regex_pattern String?   @db.VarChar(100)
+  is_active     Boolean?  @default(true)
+  created_at    DateTime? @default(now()) @db.Timestamp(0)
+  updated_at    DateTime? @default(now()) @db.Timestamp(0)
+  countries     Country?  @relation(fields: [country_id], references: [id])
+  persons       Person[]
 
-  @@unique([courier_id, ubigeo_id], map: "idx_coverage_unique")
-  @@index([ubigeo_id, is_active], map: "idx_coverage_by_location")
-  @@map("courier_coverages")
+  @@index([country_id], map: "document_types_country_id_fkey")
+  @@map("document_types")
 }
 
-model couriers {
-  id                            String                          @id @default(uuid()) @db.Char(36)
-  legacy_transporter_id         BigInt?
-  name                          String                          @db.VarChar(255)
-  country_id                    String?                         @db.Char(36)
-  ubigeo_id                     String?                         @db.Char(36)
-  url_image                     String?                         @db.Text
-  support_phone                 String?                         @db.VarChar(50)
-  support_email                 String?                         @db.VarChar(255)
-  is_require_gps                Boolean?                        @default(false)
-  flag_delivery_express         Boolean?                        @default(false)
-  sunday_delivery               Boolean?                        @default(false)
-  is_active                     Boolean?                        @default(true)
-  created_at                    DateTime?                       @db.Timestamp(0)
-  updated_at                    DateTime?                       @db.Timestamp(0)
-  courier_coverages             courier_coverages[]
-  countries                     countries?                      @relation(fields: [country_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "couriers_ibfk_1")
-  ubigeos                       Ubigeo?                         @relation(fields: [ubigeo_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "couriers_ibfk_2")
-  motorized_liquidation_details motorized_liquidation_details[]
-  motorized_profiles            motorized_profiles[]
-  order_deliveries              order_deliveries[]
-  order_shippings               order_shippings[]
+model OrderStatus {
+  id                            BigInt               @id @default(autoincrement())
+  code                          String               @unique @db.VarChar(50)
+  label                         String               @db.VarChar(100)
+  description                   String?              @db.VarChar(255)
+  color                         String?              @db.VarChar(7)
+  order_status_history_new      OrderStatusHistory[] @relation("newStatus")
+  order_status_history_previous OrderStatusHistory[] @relation("previousStatus")
+  orders                        Order[]
 
-  @@index([country_id, is_active], map: "idx_couriers_by_country")
-  @@index([ubigeo_id], map: "ubigeo_id")
-  @@map("couriers")
+  @@map("order_statuses")
 }
 
-model customer_addresses {
-  id           String     @id @default(uuid()) @db.Char(36)
-  customer_id  String?    @db.Char(36)
-  address      String     @db.Text
-  reference    String?    @db.Text
-  ubigeo_id    String?    @db.Char(36)
-  country_code String     @db.Char(3)
-  lat          Decimal?   @db.Decimal(10, 7)
-  lng          Decimal?   @db.Decimal(10, 7)
-  is_default   Boolean?   @default(false)
-  created_at   DateTime?  @db.Timestamp(0)
-  updated_at   DateTime?  @db.Timestamp(0)
-  customers    customers? @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "customer_addresses_ibfk_1")
-  ubigeos      Ubigeo?    @relation(fields: [ubigeo_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "customer_addresses_ibfk_2")
+model DeliveryStatus {
+  id               BigInt          @id @default(autoincrement())
+  code             String          @unique @db.VarChar(20)
+  label            String          @db.VarChar(50)
+  description      String?         @db.Text
+  color            String?         @db.VarChar(7)
+  is_active        Boolean?        @default(true)
+  created_at       DateTime?       @default(now()) @db.Timestamp(0)
+  updated_at       DateTime?       @default(now()) @db.Timestamp(0)
+  order_deliveries OrderDelivery[]
 
-  @@index([country_code], map: "idx_addresses_by_country")
-  @@index([customer_id], map: "idx_addresses_by_customer")
-  @@index([ubigeo_id], map: "ubigeo_id")
-  @@map("customer_addresses")
-}
-
-model customers {
-  id                 String               @id @default(uuid()) @db.Char(36)
-  legacy_customer_id BigInt?
-  store_id           String?              @db.Char(36)
-  person_id          String?              @db.Char(36)
-  email              String?              @db.VarChar(255)
-  phone              String?              @db.VarChar(50)
-  is_active          Boolean?             @default(true)
-  created_at         DateTime?            @db.Timestamp(0)
-  updated_at         DateTime?            @db.Timestamp(0)
-  customer_addresses customer_addresses[]
-  stores             stores?              @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "customers_ibfk_1")
-  persons            persons?             @relation(fields: [person_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "customers_ibfk_2")
-  orders             orders[]
-
-  @@unique([store_id, email], map: "idx_customer_email_per_store")
-  @@unique([store_id, person_id], map: "idx_unique_store_customer")
-  @@index([store_id, is_active], map: "idx_active_customers")
-  @@index([person_id], map: "person_id")
-  @@map("customers")
-}
-
-model delivery_statuses {
-  id               String             @id @default(uuid()) @db.Char(36)
-  code             String             @unique(map: "code") @db.VarChar(20)
-  label            String             @db.VarChar(50)
-  description      String?            @db.Text
-  color            String?            @db.VarChar(7)
-  is_active        Boolean?           @default(true)
-  created_at       DateTime?          @default(now()) @db.Timestamp(0)
-  updated_at       DateTime?          @default(now()) @db.Timestamp(0)
-  order_deliveries order_deliveries[]
-
-  @@index([is_active], map: "idx_delivery_statuses_active")
-  @@index([code], map: "idx_delivery_statuses_code")
   @@map("delivery_statuses")
 }
 
-model incident_types {
-  id                  String                @id @default(uuid()) @db.Char(36)
-  store_id            String?               @db.Char(36)
-  code                String                @unique(map: "code") @db.VarChar(20)
-  label               String                @db.VarChar(100)
-  description         String?               @db.Text
-  default_discount    Decimal?              @default(0.00) @db.Decimal(12, 2)
-  is_active           Boolean?              @default(true)
-  created_at          DateTime?             @default(now()) @db.Timestamp(0)
-  updated_at          DateTime?             @default(now()) @db.Timestamp(0)
-  stores              stores?               @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "incident_types_ibfk_1")
-  motorized_incidents motorized_incidents[]
+model PaymentStatus {
+  id             BigInt         @id @default(autoincrement())
+  code           String         @unique @db.VarChar(50)
+  label          String         @db.VarChar(100)
+  description    String?        @db.VarChar(255)
+  order_payments OrderPayment[]
+  Order          Order[]
 
-  @@index([code], map: "idx_incident_types_code")
-  @@index([store_id], map: "idx_incident_types_store")
-  @@map("incident_types")
+  @@map("payment_statuses")
 }
 
-model integration_webhooks {
-  id             String        @id @default(uuid()) @db.Char(36)
-  integration_id String?       @db.Char(36)
-  event_type     String        @db.VarChar(100)
-  payload        Json?
-  processed_at   DateTime?     @db.Timestamp(0)
-  created_at     DateTime?     @default(now()) @db.Timestamp(0)
-  integrations   integrations? @relation(fields: [integration_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "integration_webhooks_ibfk_1")
+model ShippingStatus {
+  id          BigInt  @id @default(autoincrement())
+  code        String  @unique @db.VarChar(50)
+  label       String  @db.VarChar(100)
+  description String? @db.VarChar(255)
+  orders      Order[]
 
-  @@index([event_type, processed_at], map: "idx_webhooks_event_processed")
-  @@index([integration_id, event_type], map: "idx_webhooks_integration_event")
-  @@map("integration_webhooks")
+  @@map("shipping_statuses")
 }
 
-model integrations {
-  id                   String                 @id @default(uuid()) @db.Char(36)
-  store_id             String?                @db.Char(36)
-  type                 String                 @db.VarChar(50)
-  is_active            Boolean?               @default(true)
-  config               Json?
-  created_at           DateTime?              @default(now()) @db.Timestamp(0)
-  updated_at           DateTime?              @default(now()) @db.Timestamp(0)
-  integration_webhooks integration_webhooks[]
-  stores               stores?                @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "integrations_ibfk_1")
+model ManagementType {
+  id          BigInt  @id @default(autoincrement())
+  code        String  @unique @db.VarChar(20)
+  label       String  @db.VarChar(100)
+  description String? @db.VarChar(255)
+  orders      Order[]
 
-  @@unique([store_id, type], map: "idx_integration_store_type")
+  @@map("management_types")
 }
 
-model inventory {
-  id                String      @id @default(uuid()) @db.Char(36)
-  warehouse_id      String?     @db.Char(36)
-  sku_id            String?     @db.Char(36)
-  quantity_on_hand  Int         @default(0)
-  quantity_reserved Int         @default(0)
-  created_at        DateTime?   @default(now()) @db.Timestamp(0)
-  updated_at        DateTime?   @default(now()) @db.Timestamp(0)
-  warehouses        warehouses? @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "inventory_ibfk_1")
-  skus              skus?       @relation(fields: [sku_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "inventory_ibfk_2")
+model AccountType {
+  id            BigInt        @id @default(autoincrement())
+  code          String        @unique @db.VarChar(20)
+  label         String        @db.VarChar(100)
+  description   String?       @db.Text
+  is_active     Boolean?      @default(true)
+  bank_accounts BankAccount[]
 
-  @@unique([warehouse_id, sku_id], map: "idx_warehouse_sku_unique")
-  @@index([warehouse_id, quantity_on_hand], map: "idx_inventory_by_stock")
-  @@index([sku_id], map: "sku_id")
-  @@map("inventory")
+  @@map("account_types")
 }
 
-model kardex {
-  id                    String                 @id @default(uuid()) @db.Char(36)
-  warehouse_id          String?                @db.Char(36)
-  sku_id                String?                @db.Char(36)
-  type_movement_id      String?                @db.Char(36)
-  status_kardex_id      String?                @db.Char(36)
-  quantity              Int
-  reference             String?                @db.VarChar(255)
-  performed_by_id       String?                @db.Char(36)
-  created_at            DateTime?              @db.Timestamp(0)
-  warehouses            warehouses?            @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "kardex_ibfk_1")
-  skus                  skus?                  @relation(fields: [sku_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "kardex_ibfk_2")
-  kardex_movement_types kardex_movement_types? @relation(fields: [type_movement_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "kardex_ibfk_3")
-  kardex_statuses       kardex_statuses?       @relation(fields: [status_kardex_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "kardex_ibfk_4")
-  users                 users?                 @relation(fields: [performed_by_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "kardex_ibfk_5")
+model ProductStatus {
+  id          BigInt    @id @default(autoincrement())
+  code        String    @unique @db.VarChar(20)
+  label       String    @db.VarChar(50)
+  description String?   @db.Text
+  products    Product[]
 
-  @@index([reference], map: "idx_kardex_by_reference")
-  @@index([warehouse_id, sku_id, created_at], map: "idx_kardex_by_sku_date")
-  @@index([performed_by_id], map: "performed_by_id")
-  @@index([status_kardex_id], map: "status_kardex_id")
-  @@index([type_movement_id], map: "type_movement_id")
-  @@index([sku_id, warehouse_id, created_at], map: "idx_kardex_sku_date")
-  @@map("kardex")
+  @@map("product_statuses")
 }
 
-model kardex_movement_types {
-  id                  String   @id @default(uuid()) @db.Char(36)
-  code                String   @unique(map: "code") @db.VarChar(20)
-  name                String   @db.VarChar(50)
-  description         String?  @db.Text
-  is_system_generated Boolean? @default(false)
-  kardex              kardex[]
+model LiquidationStatus {
+  id                     BigInt                 @id @default(autoincrement())
+  code                   String                 @unique @db.VarChar(50)
+  label                  String                 @db.VarChar(100)
+  description            String?                @db.VarChar(255)
+  liquidations           Liquidation[]
+  motorized_liquidations MotorizedLiquidation[]
 
-  @@map("kardex_movement_types")
+  @@map("liquidation_statuses")
 }
 
-model kardex_statuses {
-  id          String   @id @default(uuid()) @db.Char(36)
-  code        String   @unique(map: "code") @db.VarChar(20)
+model UbigeosLevel {
+  id          BigInt   @id @default(autoincrement())
+  country_id  BigInt?  @map("country_id")
+  level       Int
   name        String   @db.VarChar(50)
   description String?  @db.Text
-  kardex      kardex[]
+  is_active   Boolean? @default(true)
+  ubigeos     Ubigeo[]
+  countries   Country? @relation(fields: [country_id], references: [id])
 
-  @@map("kardex_statuses")
+  @@unique([country_id, level])
+  @@map("ubigeos_levels")
 }
 
-model liquidation_activity_log {
-  id             String        @id @default(uuid()) @db.Char(36)
-  liquidation_id String?       @db.Char(36)
-  action         String        @db.VarChar(50)
-  performed_by   String?       @db.Char(36)
-  details        Json?
-  created_at     DateTime?     @default(now()) @db.Timestamp(0)
-  liquidations   liquidations? @relation(fields: [liquidation_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "liquidation_activity_log_ibfk_1")
-  users          users?        @relation(fields: [performed_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "liquidation_activity_log_ibfk_2")
+model Ubigeo {
+  id                  BigInt              @id @default(autoincrement())
+  country_id          BigInt?             @map("country_id")
+  parent_id           BigInt?             @map("parent_id")
+  level_id            BigInt?             @map("level_id")
+  name                String              @db.VarChar(200)
+  code                String?             @db.VarChar(20)
+  is_active           Boolean?            @default(true)
+  courier_coverages   CourierCoverage[]
+  couriers            Courier[]
+  customer_addresses  CustomerAddress[]
+  motorized_coverages MotorizedCoverage[]
+  order_shippings     OrderShipping[]
+  persons             Person[]
+  stores              Store[]
+  countries           Country?            @relation(fields: [country_id], references: [id])
+  ubigeos_levels      UbigeosLevel?       @relation(fields: [level_id], references: [id])
+  parent              Ubigeo?             @relation("UbigeoParent", fields: [parent_id], references: [id])
+  children            Ubigeo[]            @relation("UbigeoParent")
 
-  @@index([liquidation_id], map: "liquidation_id")
-  @@index([performed_by], map: "performed_by")
-  @@map("liquidation_activity_log")
+  @@index([country_id, level_id])
+  @@index([parent_id])
+  @@index([level_id], map: "ubigeos_level_id_fkey")
+  @@map("ubigeos")
 }
 
-model liquidation_details {
-  id                String        @id @default(uuid()) @db.Char(36)
-  liquidation_id    String?       @db.Char(36)
-  order_id          String?       @db.Char(36)
-  sku_id            String?       @db.Char(36)
-  quantity          Int
-  unit_price        Decimal       @db.Decimal(12, 2)
-  total_amount      Decimal       @db.Decimal(12, 2)
-  commission_rate   Decimal       @db.Decimal(5, 4)
-  commission_amount Decimal       @db.Decimal(12, 2)
-  net_amount        Decimal       @db.Decimal(12, 2)
-  created_at        DateTime?     @default(now()) @db.Timestamp(0)
-  liquidations      liquidations? @relation(fields: [liquidation_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "liquidation_details_ibfk_1")
-  orders            orders?       @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "liquidation_details_ibfk_2")
-  skus              skus?         @relation(fields: [sku_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "liquidation_details_ibfk_3")
+model Store {
+  id                     BigInt                 @id @default(autoincrement())
+  legacy_store_id        BigInt?                @map("legacy_store_id")
+  name                   String                 @db.VarChar(255)
+  business_name          String?                @db.VarChar(255)
+  ruc                    String?                @db.VarChar(20)
+  logo_url               String?                @db.Text
+  country_id             BigInt?                @map("country_id")
+  ubigeo_id              BigInt?                @map("ubigeo_id")
+  address                String?                @db.Text
+  timezone               String?                @db.VarChar(50)
+  currency_code          String?                @db.Char(3)
+  is_active              Boolean?               @default(true)
+  created_at             DateTime?              @db.Timestamp(0)
+  updated_at             DateTime?              @db.Timestamp(0)
+  bank_accounts          BankAccount[]
+  catalogs               Catalog[]
+  categories             Category[]
+  customers              Customer[]
+  incident_types         IncidentType[]
+  integrations           Integration[]
+  liquidations           Liquidation[]
+  motorized_liquidations MotorizedLiquidation[]
+  orders                 Order[]
+  products               Product[]
+  skus                   Sku[]
+  store_memberships      StoreMembership[]
+  store_settings         StoreSetting?
+  countries              Country?               @relation(fields: [country_id], references: [id])
+  ubigeos                Ubigeo?                @relation(fields: [ubigeo_id], references: [id])
+  wallets                Wallet[]
+  WarehouseSku           WarehouseSku[]
+  warehouses             Warehouse[]
 
-  @@index([liquidation_id], map: "liquidation_id")
-  @@index([order_id], map: "order_id")
-  @@index([sku_id], map: "sku_id")
-  @@map("liquidation_details")
+  @@unique([ruc, country_id])
+  @@index([country_id, is_active])
+  @@index([ubigeo_id], map: "stores_ubigeo_id_fkey")
+  @@map("stores")
 }
 
-model liquidation_exports {
-  id             String        @id @default(uuid()) @db.Char(36)
-  liquidation_id String?       @db.Char(36)
-  file_url       String        @db.VarChar(500)
-  exported_by    String?       @db.Char(36)
-  exported_at    DateTime?     @default(now()) @db.Timestamp(0)
-  liquidations   liquidations? @relation(fields: [liquidation_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "liquidation_exports_ibfk_1")
-  users          users?        @relation(fields: [exported_by], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "liquidation_exports_ibfk_2")
+model Person {
+  id                     BigInt                 @id @default(autoincrement())
+  legacy_person_id       BigInt?                @map("legacy_person_id")
+  first_name             String?                @db.VarChar(100)
+  last_name              String?                @db.VarChar(100)
+  document_type_id       BigInt?                @map("document_type_id")
+  document_number        String?                @unique @db.VarChar(20)
+  birth_date             DateTime?              @db.Date
+  ubigeo_id              BigInt?                @map("ubigeo_id")
+  address                String?                @db.Text
+  created_at             DateTime?              @db.Timestamp(0)
+  updated_at             DateTime?              @db.Timestamp(0)
+  customers              Customer[]
+  motorized_liquidations MotorizedLiquidation[]
+  motorized_profiles     MotorizedProfile?
+  order_deliveries       OrderDelivery[]
+  document_types         DocumentType?          @relation(fields: [document_type_id], references: [id])
+  ubigeos                Ubigeo?                @relation(fields: [ubigeo_id], references: [id])
+  users                  User[]
 
-  @@index([exported_by], map: "exported_by")
-  @@index([liquidation_id], map: "liquidation_id")
+  @@unique([document_type_id, document_number])
+  @@index([ubigeo_id], map: "persons_ubigeo_id_fkey")
+  @@map("persons")
 }
 
-model liquidation_statuses {
-  id                     String                   @id @default(uuid()) @db.Char(36)
-  code                   String                   @unique(map: "code") @db.VarChar(50)
-  label                  String                   @db.VarChar(100)
-  description            String?                  @db.VarChar(255)
-  liquidations           liquidations[]
-  motorized_liquidations motorized_liquidations[]
+model User {
+  id                              BigInt                         @id @default(autoincrement())
+  person_id                       BigInt?                        @map("person_id")
+  email                           String                         @unique @db.VarChar(255)
+  cognito_sub                     String?                        @unique @db.VarChar(255)
+  is_active                       Boolean?                       @default(true)
+  last_login_at                   DateTime?                      @db.Timestamp(0)
+  created_at                      DateTime?                      @db.Timestamp(0)
+  updated_at                      DateTime?                      @db.Timestamp(0)
+  kardex                          Kardex[]
+  liquidation_activity_log        LiquidationActivityLog[]
+  liquidation_exports             LiquidationExport[]
+  motorized_incidents_reported    MotorizedIncident[]            @relation("reportedBy")
+  motorized_incidents_resolved    MotorizedIncident[]            @relation("resolvedBy")
+  motorized_liquidation_evidences MotorizedLiquidationEvidence[]
+  order_status_history            OrderStatusHistory[]
+  store_memberships               StoreMembership[]
+  user_terms_acceptances          UserTermsAcceptance[]
+  persons                         Person?                        @relation(fields: [person_id], references: [id])
+  wallet_transactions             WalletTransaction[]
+  TrackingEvent                   TrackingEvent[]
+
+  @@index([person_id], map: "users_person_id_fkey")
+  @@map("users")
 }
 
-model liquidations {
-  id                       String                     @id @default(uuid()) @db.Char(36)
-  store_id                 String?                    @db.Char(36)
-  period_start             DateTime                   @db.Date
-  period_end               DateTime                   @db.Date
-  status_id                String?                    @db.Char(36)
-  total_orders             Int
-  total_delivered          Int
-  total_cash               Decimal                    @db.Decimal(14, 2)
-  total_transfer           Decimal                    @db.Decimal(14, 2)
-  total_pos                Decimal                    @db.Decimal(14, 2)
-  commission_amount        Decimal                    @db.Decimal(14, 2)
-  net_amount               Decimal                    @db.Decimal(14, 2)
-  currency_code            String                     @db.Char(3)
-  created_at               DateTime?                  @default(now()) @db.Timestamp(0)
-  updated_at               DateTime?                  @default(now()) @db.Timestamp(0)
-  liquidation_activity_log liquidation_activity_log[]
-  liquidation_details      liquidation_details[]
-  liquidation_exports      liquidation_exports[]
-  stores                   stores?                    @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "liquidations_ibfk_1")
-  liquidation_statuses     liquidation_statuses?      @relation(fields: [status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "liquidations_ibfk_2")
+model Customer {
+  id                 BigInt            @id @default(autoincrement())
+  legacy_customer_id BigInt?           @map("legacy_customer_id")
+  store_id           BigInt?           @map("store_id")
+  person_id          BigInt?           @map("person_id")
+  email              String?           @db.VarChar(255)
+  phone              String?           @db.VarChar(50)
+  is_active          Boolean?          @default(true)
+  created_at         DateTime?         @db.Timestamp(0)
+  updated_at         DateTime?         @db.Timestamp(0)
+  customer_addresses CustomerAddress[]
+  persons            Person?           @relation(fields: [person_id], references: [id])
+  stores             Store?            @relation(fields: [store_id], references: [id])
+  orders             Order[]
 
-  @@index([currency_code], map: "idx_liquidations_currency")
-  @@index([store_id, period_start, period_end, status_id], map: "idx_liquidations_report")
-  @@index([store_id, period_start, period_end], map: "idx_liquidations_store_period")
-  @@index([store_id, status_id], map: "idx_liquidations_store_status")
-  @@index([status_id], map: "status_id")
+  @@unique([store_id, email])
+  @@unique([store_id, person_id])
+  @@index([store_id, is_active])
+  @@index([person_id], map: "customers_person_id_fkey")
+  @@map("customers")
 }
 
-model management_types {
-  id          String   @id @default(uuid()) @db.Char(36)
-  code        String   @unique(map: "code") @db.VarChar(20)
-  label       String   @db.VarChar(100)
-  description String?  @db.VarChar(255)
-  orders      orders[]
+model Order {
+  id                            BigInt                       @id @default(autoincrement())
+  legacy_order_id               BigInt?                      @map("legacy_order_id")
+  store_id                      BigInt?                      @map("store_id")
+  customer_id                   BigInt?                      @map("customer_id")
+  warehouse_id                  BigInt?                      @map("warehouse_id")
+  status_id                     BigInt?                      @map("status_id")
+  payment_status_id             BigInt?                      @map("payment_status_id")
+  shipping_status_id            BigInt?                      @map("shipping_status_id")
+  management_type_id            BigInt?                      @map("management_type_id")
+  order_number                  String                       @unique @db.VarChar(50)
+  channel                       String?                      @default("WEB") @db.VarChar(50)
+  subtotal                      Decimal                      @db.Decimal(12, 2)
+  tax_amount                    Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  discount_amount               Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  total                         Decimal                      @db.Decimal(12, 2)
+  fulfillment_platform          String?                      @db.VarChar(50)
+  fulfillment_cost              Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  drop_cost                     Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  cash_amount                   Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  transfer_amount               Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  pos_amount                    Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  currency_code                 String                       @db.Char(3)
+  external_order_id             String?                      @unique @db.VarChar(100)
+  note                          String?                      @db.Text
+  created_at                    DateTime?                    @default(now()) @db.Timestamp(0)
+  updated_at                    DateTime?                    @default(now()) @db.Timestamp(0)
+  liquidation_details           LiquidationDetail[]
+  motorized_liquidation_details MotorizedLiquidationDetail[]
+  order_deliveries              OrderDelivery[]
+  order_details                 OrderDetail[]
+  order_payments                OrderPayment[]
+  order_shippings               OrderShipping?
+  order_status_history          OrderStatusHistory[]
+  tracking_events               TrackingEvent[]
+  customers                     Customer?                    @relation(fields: [customer_id], references: [id])
+  management_types              ManagementType?              @relation(fields: [management_type_id], references: [id])
+  payment_statuses              PaymentStatus?               @relation(fields: [payment_status_id], references: [id])
+  shipping_statuses             ShippingStatus?              @relation(fields: [shipping_status_id], references: [id])
+  order_statuses                OrderStatus?                 @relation(fields: [status_id], references: [id])
+  stores                        Store?                       @relation(fields: [store_id], references: [id])
+  warehouses                    Warehouse?                   @relation(fields: [warehouse_id], references: [id])
+
+  @@unique([store_id, order_number])
+  @@index([customer_id, created_at])
+  @@index([currency_code])
+  @@index([management_type_id])
+  @@index([fulfillment_platform])
+  @@index([store_id, created_at])
+  @@index([store_id, status_id, created_at])
+  @@index([status_id, created_at])
+  @@index([payment_status_id], map: "orders_payment_status_id_fkey")
+  @@index([shipping_status_id], map: "orders_shipping_status_id_fkey")
+  @@index([warehouse_id], map: "orders_warehouse_id_fkey")
+  @@map("orders")
 }
 
-model motorized_coverages {
-  id                      String              @id @default(uuid()) @db.Char(36)
-  motorized_profile_id    String?             @db.Char(36)
-  ubigeo_id               String?             @db.Char(36)
-  coverage_level          String?             @default("FULL") @db.VarChar(20)
-  custom_rate             Decimal?            @db.Decimal(10, 2)
-  estimated_delivery_time Int?
-  is_active               Boolean?            @default(true)
-  created_at              DateTime?           @default(now()) @db.Timestamp(0)
-  updated_at              DateTime?           @default(now()) @db.Timestamp(0)
-  motorized_profiles      motorized_profiles? @relation(fields: [motorized_profile_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_coverages_ibfk_1")
-  ubigeos                 Ubigeo?             @relation(fields: [ubigeo_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_coverages_ibfk_2")
-
-  @@unique([motorized_profile_id, ubigeo_id], map: "idx_motorized_coverage_unique")
-  @@index([is_active], map: "idx_motorized_coverage_active")
-  @@index([ubigeo_id], map: "idx_motorized_coverage_ubigeo")
-}
-
-model motorized_incidents {
-  id                                              String                         @id @default(uuid()) @db.Char(36)
-  motorized_liquidation_detail_id                 String?                        @db.Char(36)
-  incident_type_id                                String?                        @db.Char(36)
-  description                                     String?                        @db.Text
-  discount_amount                                 Decimal                        @db.Decimal(12, 2)
-  evidence_url                                    String?                        @db.Text
-  evidence_metadata                               Json?
-  reported_by_id                                  String?                        @db.Char(36)
-  resolved_by_id                                  String?                        @db.Char(36)
-  status                                          String?                        @default("PENDING") @db.VarChar(20)
-  created_at                                      DateTime?                      @default(now()) @db.Timestamp(0)
-  updated_at                                      DateTime?                      @default(now()) @db.Timestamp(0)
-  motorized_liquidation_details                   motorized_liquidation_details? @relation(fields: [motorized_liquidation_detail_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_incidents_ibfk_1")
-  incident_types                                  incident_types?                @relation(fields: [incident_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_incidents_ibfk_2")
-  users_motorized_incidents_reported_by_idTousers users?                         @relation("motorized_incidents_reported_by_idTousers", fields: [reported_by_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_incidents_ibfk_3")
-  users_motorized_incidents_resolved_by_idTousers users?                         @relation("motorized_incidents_resolved_by_idTousers", fields: [resolved_by_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_incidents_ibfk_4")
-
-  @@index([motorized_liquidation_detail_id], map: "idx_incident_detail")
-  @@index([status], map: "idx_incident_status")
-  @@index([incident_type_id], map: "idx_incident_type")
-  @@index([reported_by_id], map: "reported_by_id")
-  @@index([resolved_by_id], map: "resolved_by_id")
-}
-
-model motorized_liquidation_details {
-  id                       String                  @id @default(uuid()) @db.Char(36)
-  motorized_liquidation_id String?                 @db.Char(36)
-  order_delivery_id        String?                 @db.Char(36)
-  delivery_fee             Decimal                 @db.Decimal(12, 2)
-  delivery_date            DateTime                @db.Timestamp(0)
-  delivery_status_code     String                  @db.VarChar(20)
-  base_commission          Decimal                 @db.Decimal(12, 2)
-  additional_commission    Decimal?                @default(0.00) @db.Decimal(12, 2)
-  total_commission         Decimal                 @db.Decimal(12, 2)
-  incident_discount        Decimal?                @default(0.00) @db.Decimal(12, 2)
-  net_commission           Decimal                 @db.Decimal(12, 2)
-  order_id                 String?                 @db.Char(36)
-  courier_id               String?                 @db.Char(36)
-  notes                    String?                 @db.Text
-  created_at               DateTime?               @default(now()) @db.Timestamp(0)
-  motorized_incidents      motorized_incidents[]
-  motorized_liquidations   motorized_liquidations? @relation(fields: [motorized_liquidation_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidation_details_ibfk_1")
-  order_deliveries         order_deliveries?       @relation(fields: [order_delivery_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidation_details_ibfk_2")
-  orders                   orders?                 @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidation_details_ibfk_3")
-  couriers                 couriers?               @relation(fields: [courier_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidation_details_ibfk_4")
-
-  @@index([courier_id], map: "courier_id")
-  @@index([order_delivery_id], map: "idx_motorized_detail_delivery")
-  @@index([motorized_liquidation_id], map: "idx_motorized_detail_liquidation")
-  @@index([order_id], map: "order_id")
-}
-
-model motorized_liquidation_evidences {
-  id                       String                  @id @default(uuid()) @db.Char(36)
-  motorized_liquidation_id String?                 @db.Char(36)
-  voucher_number           String                  @db.VarChar(50)
-  voucher_date             DateTime                @db.Date
-  amount                   Decimal                 @db.Decimal(12, 2)
-  file_url                 String?                 @db.Text
-  payment_method_id        String?                 @db.Char(36)
-  operation_code           String?                 @unique(map: "idx_motorized_evidence_operation") @db.VarChar(50)
-  created_by_id            String?                 @db.Char(36)
-  created_at               DateTime?               @default(now()) @db.Timestamp(0)
-  updated_at               DateTime?               @default(now()) @db.Timestamp(0)
-  motorized_liquidations   motorized_liquidations? @relation(fields: [motorized_liquidation_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidation_evidences_ibfk_1")
-  payment_methods          payment_methods?        @relation(fields: [payment_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidation_evidences_ibfk_2")
-  users                    users?                  @relation(fields: [created_by_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidation_evidences_ibfk_3")
-
-  @@index([motorized_liquidation_id], map: "idx_motorized_evidence_liquidation")
-  @@index([created_by_id], map: "idx_motorized_evidence_user")
-  @@index([payment_method_id], map: "payment_method_id")
-}
-
-model motorized_liquidations {
-  id                              String                            @id @default(uuid()) @db.Char(36)
-  store_id                        String?                           @db.Char(36)
-  motorized_person_id             String?                           @db.Char(36)
-  period_start                    DateTime                          @db.Date
-  period_end                      DateTime                          @db.Date
-  status_id                       String?                           @db.Char(36)
-  total_deliveries                Int?                              @default(0)
-  total_delivered                 Int?                              @default(0)
-  total_failed                    Int?                              @default(0)
-  total_incidents                 Int?                              @default(0)
-  subtotal_commission             Decimal                           @db.Decimal(14, 2)
-  total_discounts                 Decimal?                          @default(0.00) @db.Decimal(14, 2)
-  net_amount                      Decimal                           @db.Decimal(14, 2)
-  currency_code                   String                            @db.Char(3)
-  created_at                      DateTime?                         @default(now()) @db.Timestamp(0)
-  updated_at                      DateTime?                         @default(now()) @db.Timestamp(0)
-  motorized_liquidation_details   motorized_liquidation_details[]
-  motorized_liquidation_evidences motorized_liquidation_evidences[]
-  stores                          stores?                           @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidations_ibfk_1")
-  persons                         persons?                          @relation(fields: [motorized_person_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidations_ibfk_2")
-  liquidation_statuses            liquidation_statuses?             @relation(fields: [status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_liquidations_ibfk_3")
-
-  @@index([store_id, motorized_person_id, period_start, period_end], map: "idx_motorized_liquidation_period")
-  @@index([motorized_person_id, created_at], map: "idx_motorized_liquidation_person")
-  @@index([status_id], map: "idx_motorized_liquidation_status")
-}
-
-model motorized_profiles {
-  id                  String                @id @default(uuid()) @db.Char(36)
-  person_id           String?               @unique(map: "idx_motorized_profile_person") @db.Char(36)
-  license_number      String?               @db.VarChar(50)
-  vehicle_type        String?               @db.VarChar(50)
-  vehicle_plate       String?               @db.VarChar(20)
-  vehicle_brand       String?               @db.VarChar(50)
-  vehicle_model       String?               @db.VarChar(50)
-  vehicle_year        Int?
-  courier_id          String?               @db.Char(36)
-  is_available        Boolean?              @default(true)
-  shift_start         DateTime?             @db.Time(0)
-  shift_end           DateTime?             @db.Time(0)
-  base_rate           Decimal?              @default(5.00) @db.Decimal(10, 2)
-  is_active           Boolean?              @default(true)
-  created_at          DateTime?             @default(now()) @db.Timestamp(0)
-  updated_at          DateTime?             @default(now()) @db.Timestamp(0)
-  motorized_coverages motorized_coverages[]
-  persons             persons?              @relation(fields: [person_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_profiles_ibfk_1")
-  couriers            couriers?             @relation(fields: [courier_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "motorized_profiles_ibfk_2")
-
-  @@index([is_active], map: "idx_motorized_profile_active")
-  @@index([is_available], map: "idx_motorized_profile_available")
-  @@index([courier_id], map: "idx_motorized_profile_courier")
-}
-
-model order_deliveries {
-  id                            String                          @id @default(uuid()) @db.Char(36)
-  order_id                      String?                         @db.Char(36)
-  person_id                     String?                         @db.Char(36)
-  courier_id                    String?                         @db.Char(36)
-  delivery_status_id            String?                         @db.Char(36)
-  schedule_date                 DateTime?                       @db.Timestamp(0)
-  actual_delivery_date          DateTime?                       @db.Timestamp(0)
-  notes                         String?                         @db.Text
-  created_at                    DateTime?                       @default(now()) @db.Timestamp(0)
-  motorized_liquidation_details motorized_liquidation_details[]
-  orders                        orders?                         @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_deliveries_ibfk_1")
-  persons                       persons?                        @relation(fields: [person_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_deliveries_ibfk_2")
-  couriers                      couriers?                       @relation(fields: [courier_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_deliveries_ibfk_3")
-  delivery_statuses             delivery_statuses?              @relation(fields: [delivery_status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_deliveries_ibfk_4")
-
-  @@index([delivery_status_id, created_at], map: "idx_active_deliveries_by_status")
-  @@index([courier_id, delivery_status_id], map: "idx_deliveries_by_courier")
-  @@index([person_id, created_at], map: "idx_deliveries_by_motorized")
-  @@index([order_id, created_at], map: "idx_order_delivery_history")
-}
-
-model order_details {
-  id                    String    @id @default(uuid()) @db.Char(36)
-  order_id              String?   @db.Char(36)
-  product_id            String?   @db.Char(36)
+model OrderDetail {
+  id                    BigInt    @id @default(autoincrement())
+  order_id              BigInt?   @map("order_id")
+  product_id            BigInt?   @map("product_id")
   product_name          String    @db.VarChar(255)
-  sku_id                String?   @db.Char(36)
+  sku_id                BigInt?   @map("sku_id")
   sku_code              String    @db.VarChar(50)
   quantity              Int
   delivered_quantity    Int?      @default(0)
@@ -732,502 +360,930 @@ model order_details {
   currency_code         String    @db.Char(3)
   notes                 String?   @db.Text
   created_at            DateTime? @default(now()) @db.Timestamp(0)
-  orders                orders?   @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_details_ibfk_1")
-  products              products? @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_details_ibfk_2")
-  skus                  skus?     @relation(fields: [sku_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_details_ibfk_3")
+  orders                Order?    @relation(fields: [order_id], references: [id])
+  products              Product?  @relation(fields: [product_id], references: [id])
+  skus                  Sku?      @relation(fields: [sku_id], references: [id])
 
-  @@index([order_id], map: "idx_details_by_order")
-  @@index([product_id], map: "idx_details_by_product")
-  @@index([sku_id], map: "idx_details_by_sku")
+  @@index([order_id])
+  @@index([product_id])
+  @@index([sku_id])
+  @@map("order_details")
 }
 
-model order_payments {
-  id                String            @id @default(uuid()) @db.Char(36)
-  order_id          String?           @db.Char(36)
-  payment_method_id String?           @db.Char(36)
-  amount            Decimal           @db.Decimal(12, 2)
-  payment_status_id String?           @db.Char(36)
-  operation_code    String?           @db.VarChar(50)
-  transaction_id    String?           @db.VarChar(100)
-  paid_at           DateTime?         @db.Timestamp(0)
-  created_at        DateTime?         @default(now()) @db.Timestamp(0)
-  orders            orders?           @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_payments_ibfk_1")
-  payment_methods   payment_methods?  @relation(fields: [payment_method_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_payments_ibfk_2")
-  payment_statuses  payment_statuses? @relation(fields: [payment_status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_payments_ibfk_3")
+model OrderShipping {
+  id                            BigInt                       @id @default(autoincrement())
+  order_id                      BigInt?                      @unique @map("order_id")
+  address                       String                       @db.Text
+  reference                     String?                      @db.Text
+  ubigeo_id                     BigInt?                      @map("ubigeo_id")
+  country_code                  String                       @db.Char(3)
+  lat                           Decimal                      @db.Decimal(10, 7)
+  lng                           Decimal                      @db.Decimal(10, 7)
+  courier_id                    BigInt?                      @map("courier_id")
+  tracking_number               String?                      @db.VarChar(100)
+  shipping_cost                 Decimal                      @db.Decimal(12, 2)
+  discount_amount               Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  cod_amount                    Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  agency_origin_name            String?                      @db.VarChar(255)
+  agency_destination_name       String?                      @db.VarChar(255)
+  guide_series                  String?                      @db.VarChar(50)
+  key_code                      String?                      @unique @db.VarChar(100)
+  shalom_service_type           String?                      @db.VarChar(50)
+  shalom_package_type           String?                      @db.VarChar(50)
+  contact_document_type         String?                      @db.VarChar(20)
+  contact_document_number       String?                      @db.VarChar(50)
+  merchandise_description       String?                      @db.VarChar(500)
+  declared_value                Decimal?                     @default(0.00) @db.Decimal(12, 2)
+  is_automatic_guide            Boolean?                     @default(false)
+  schedule_date                 DateTime?                    @db.Timestamp(0)
+  estimated_delivery_date       DateTime?                    @db.Timestamp(0)
+  dispatch_date                 DateTime?                    @db.Timestamp(0)
+  delivered_at                  DateTime?                    @db.Timestamp(0)
+  notes                         String?                      @db.Text
+  created_at                    DateTime?                    @default(now()) @db.Timestamp(0)
+  updated_at                    DateTime?                    @default(now()) @db.Timestamp(0)
+  motorized_liquidation_details MotorizedLiquidationDetail[]
+  couriers                      Courier?                     @relation(fields: [courier_id], references: [id])
+  orders                        Order?                       @relation(fields: [order_id], references: [id])
+  ubigeos                       Ubigeo?                      @relation(fields: [ubigeo_id], references: [id])
 
-  @@index([order_id], map: "idx_order_payments_lookup")
-  @@index([paid_at], map: "idx_payments_by_date")
-  @@index([payment_method_id, paid_at], map: "idx_payments_by_method_date")
-  @@index([payment_status_id], map: "payment_status_id")
+  @@index([country_code, schedule_date])
+  @@index([courier_id, tracking_number])
+  @@index([key_code])
+  @@index([dispatch_date])
+  @@index([estimated_delivery_date])
+  @@index([shalom_service_type])
+  @@index([ubigeo_id], map: "order_shippings_ubigeo_id_fkey")
+  @@map("order_shippings")
 }
 
-model order_shippings {
-  id                      String    @id @default(uuid()) @db.Char(36)
-  order_id                String?   @unique(map: "order_id") @db.Char(36)
-  address                 String    @db.Text
-  reference               String?   @db.Text
-  ubigeo_id               String?   @db.Char(36)
-  country_code            String    @db.Char(3)
-  lat                     Decimal   @db.Decimal(10, 7)
-  lng                     Decimal   @db.Decimal(10, 7)
-  courier_id              String?   @db.Char(36)
-  tracking_number         String?   @db.VarChar(100)
-  shipping_cost           Decimal   @db.Decimal(12, 2)
-  discount_amount         Decimal?  @default(0.00) @db.Decimal(12, 2)
-  cod_amount              Decimal?  @default(0.00) @db.Decimal(12, 2)
-  agency_origin_name      String?   @db.VarChar(255)
-  agency_destination_name String?   @db.VarChar(255)
-  guide_series            String?   @db.VarChar(50)
-  key_code                String?   @unique(map: "key_code") @db.VarChar(100)
-  shalom_service_type     String?   @db.VarChar(50)
-  shalom_package_type     String?   @db.VarChar(50)
-  contact_document_type   String?   @db.VarChar(20)
-  contact_document_number String?   @db.VarChar(50)
-  merchandise_description String?   @db.VarChar(500)
-  declared_value          Decimal?  @default(0.00) @db.Decimal(12, 2)
-  is_automatic_guide      Boolean?  @default(false)
-  schedule_date           DateTime? @db.Timestamp(0)
-  estimated_delivery_date DateTime? @db.Timestamp(0)
-  dispatch_date           DateTime? @db.Timestamp(0)
-  delivered_at            DateTime? @db.Timestamp(0)
-  notes                   String?   @db.Text
-  created_at              DateTime? @default(now()) @db.Timestamp(0)
-  updated_at              DateTime? @default(now()) @db.Timestamp(0)
-  orders                  orders?   @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_shippings_ibfk_1")
-  ubigeos                 Ubigeo?   @relation(fields: [ubigeo_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_shippings_ibfk_2")
-  couriers                couriers? @relation(fields: [courier_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_shippings_ibfk_3")
+model OrderDelivery {
+  id                            BigInt                       @id @default(autoincrement())
+  order_id                      BigInt?                      @map("order_id")
+  person_id                     BigInt?                      @map("person_id")
+  courier_id                    BigInt?                      @map("courier_id")
+  delivery_status_id            BigInt?                      @map("delivery_status_id")
+  schedule_date                 DateTime?                    @db.Timestamp(0)
+  actual_delivery_date          DateTime?                    @db.Timestamp(0)
+  notes                         String?                      @db.Text
+  created_at                    DateTime?                    @default(now()) @db.Timestamp(0)
+  motorized_liquidation_details MotorizedLiquidationDetail[]
+  couriers                      Courier?                     @relation(fields: [courier_id], references: [id])
+  delivery_statuses             DeliveryStatus?              @relation(fields: [delivery_status_id], references: [id])
+  orders                        Order?                       @relation(fields: [order_id], references: [id])
+  persons                       Person?                      @relation(fields: [person_id], references: [id])
 
-  @@index([country_code, schedule_date], map: "idx_shipping_by_country_date")
-  @@index([courier_id, tracking_number], map: "idx_shipping_by_courier_tracking")
-  @@index([key_code], map: "idx_shipping_by_keycode")
-  @@index([order_id], map: "idx_shipping_by_order")
-  @@index([dispatch_date], map: "idx_shipping_dispatch_date")
-  @@index([estimated_delivery_date], map: "idx_shipping_estimated_date")
-  @@index([shalom_service_type], map: "idx_shipping_service_type")
-  @@index([ubigeo_id], map: "ubigeo_id")
+  @@index([delivery_status_id, created_at])
+  @@index([courier_id, delivery_status_id])
+  @@index([person_id, created_at])
+  @@index([order_id, created_at])
+  @@map("order_deliveries")
 }
 
-model order_status_history {
-  id                                                                     String          @id @default(uuid()) @db.Char(36)
-  order_id                                                               String?         @db.Char(36)
-  previous_status_id                                                     String?         @db.Char(36)
-  new_status_id                                                          String?         @db.Char(36)
-  changed_by_id                                                          String?         @db.Char(36)
-  comment                                                                String?         @db.Text
-  created_at                                                             DateTime?       @default(now()) @db.Timestamp(0)
-  orders                                                                 orders?         @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_status_history_ibfk_1")
-  order_statuses_order_status_history_previous_status_idToorder_statuses order_statuses? @relation("order_status_history_previous_status_idToorder_statuses", fields: [previous_status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_status_history_ibfk_2")
-  order_statuses_order_status_history_new_status_idToorder_statuses      order_statuses? @relation("order_status_history_new_status_idToorder_statuses", fields: [new_status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_status_history_ibfk_3")
-  users                                                                  users?          @relation(fields: [changed_by_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_status_history_ibfk_4")
+model OrderPayment {
+  id                BigInt         @id @default(autoincrement())
+  order_id          BigInt?        @map("order_id")
+  payment_method_id BigInt?        @map("payment_method_id")
+  amount            Decimal        @db.Decimal(12, 2)
+  payment_status_id BigInt?        @map("payment_status_id")
+  operation_code    String?        @db.VarChar(50)
+  transaction_id    String?        @db.VarChar(100)
+  paid_at           DateTime?      @db.Timestamp(0)
+  created_at        DateTime?      @default(now()) @db.Timestamp(0)
+  orders            Order?         @relation(fields: [order_id], references: [id])
+  payment_methods   PaymentMethod? @relation(fields: [payment_method_id], references: [id])
+  payment_statuses  PaymentStatus? @relation(fields: [payment_status_id], references: [id])
 
-  @@index([changed_by_id], map: "changed_by_id")
-  @@index([order_id, created_at], map: "idx_order_status_timeline")
-  @@index([new_status_id, created_at], map: "idx_status_changes_by_status")
-  @@index([previous_status_id], map: "previous_status_id")
+  @@index([order_id])
+  @@index([paid_at])
+  @@index([payment_method_id, paid_at])
+  @@index([payment_status_id], map: "order_payments_payment_status_id_fkey")
+  @@map("order_payments")
 }
 
-model order_statuses {
-  id                                                                           String                 @id @default(uuid()) @db.Char(36)
-  code                                                                         String                 @unique(map: "code") @db.VarChar(50)
-  label                                                                        String                 @db.VarChar(100)
-  description                                                                  String?                @db.VarChar(255)
-  color                                                                        String?                @db.VarChar(7)
-  order_status_history_order_status_history_previous_status_idToorder_statuses order_status_history[] @relation("order_status_history_previous_status_idToorder_statuses")
-  order_status_history_order_status_history_new_status_idToorder_statuses      order_status_history[] @relation("order_status_history_new_status_idToorder_statuses")
-  orders                                                                       orders[]
+model OrderStatusHistory {
+  id                 BigInt       @id @default(autoincrement())
+  order_id           BigInt?      @map("order_id")
+  previous_status_id BigInt?      @map("previous_status_id")
+  new_status_id      BigInt?      @map("new_status_id")
+  changed_by_id      BigInt?      @map("changed_by_id")
+  comment            String?      @db.Text
+  created_at         DateTime?    @default(now()) @db.Timestamp(0)
+  users              User?        @relation(fields: [changed_by_id], references: [id])
+  new_status         OrderStatus? @relation("newStatus", fields: [new_status_id], references: [id])
+  orders             Order?       @relation(fields: [order_id], references: [id])
+  previous_status    OrderStatus? @relation("previousStatus", fields: [previous_status_id], references: [id])
+
+  @@index([order_id, created_at])
+  @@index([new_status_id, created_at])
+  @@index([changed_by_id], map: "order_status_history_changed_by_id_fkey")
+  @@index([previous_status_id], map: "order_status_history_previous_status_id_fkey")
+  @@map("order_status_history")
 }
 
-model orders {
-  id                            String                          @id @default(uuid()) @db.Char(36)
-  legacy_order_id               BigInt?
-  store_id                      String?                         @db.Char(36)
-  customer_id                   String?                         @db.Char(36)
-  warehouse_id                  String?                         @db.Char(36)
-  status_id                     String?                         @db.Char(36)
-  payment_status_id             String?                         @db.Char(36)
-  shipping_status_id            String?                         @db.Char(36)
-  management_type_id            String?                         @db.Char(36)
-  order_number                  String                          @unique(map: "order_number") @db.VarChar(50)
-  channel                       String?                         @default("WEB") @db.VarChar(50)
-  subtotal                      Decimal                         @db.Decimal(12, 2)
-  tax_amount                    Decimal?                        @default(0.00) @db.Decimal(12, 2)
-  discount_amount               Decimal?                        @default(0.00) @db.Decimal(12, 2)
-  total                         Decimal                         @db.Decimal(12, 2)
-  fulfillment_platform          String?                         @db.VarChar(50)
-  fulfillment_cost              Decimal?                        @default(0.00) @db.Decimal(12, 2)
-  drop_cost                     Decimal?                        @default(0.00) @db.Decimal(12, 2)
-  cash_amount                   Decimal?                        @default(0.00) @db.Decimal(12, 2)
-  transfer_amount               Decimal?                        @default(0.00) @db.Decimal(12, 2)
-  pos_amount                    Decimal?                        @default(0.00) @db.Decimal(12, 2)
-  currency_code                 String                          @db.Char(3)
-  external_order_id             String?                         @unique(map: "idx_external_order_unique") @db.VarChar(100)
-  note                          String?                         @db.Text
-  created_at                    DateTime?                       @default(now()) @db.Timestamp(0)
-  updated_at                    DateTime?                       @default(now()) @db.Timestamp(0)
-  liquidation_details           liquidation_details[]
-  motorized_liquidation_details motorized_liquidation_details[]
-  order_deliveries              order_deliveries[]
-  order_details                 order_details[]
-  order_payments                order_payments[]
-  order_shippings               order_shippings?
-  order_status_history          order_status_history[]
-  stores                        stores?                         @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "orders_ibfk_1")
-  customers                     customers?                      @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "orders_ibfk_2")
-  warehouses                    warehouses?                     @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "orders_ibfk_3")
-  order_statuses                order_statuses?                 @relation(fields: [status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "orders_ibfk_4")
-  payment_statuses              payment_statuses?               @relation(fields: [payment_status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "orders_ibfk_5")
-  shipping_statuses             shipping_statuses?              @relation(fields: [shipping_status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "orders_ibfk_6")
-  management_types              management_types?               @relation(fields: [management_type_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "orders_ibfk_7")
+model Product {
+  id                     BigInt           @id @default(autoincrement())
+  legacy_product_id      BigInt?          @map("legacy_product_id")
+  store_id               BigInt?          @map("store_id")
+  category_id            BigInt?          @map("category_id")
+  catalog_id             BigInt?          @map("catalog_id")
+  name                   String           @db.VarChar(255)
+  short_description      String?          @db.Text
+  large_description      String?          @db.Text
+  url_image              String?          @db.Text
+  is_product_global      Boolean?         @default(false)
+  sale_price_drop        Decimal?         @default(0.00) @db.Decimal(12, 2)
+  price_drop_crate       Decimal?         @default(0.00) @db.Decimal(12, 2)
+  price_drop_dozen       Decimal?         @default(0.00) @db.Decimal(12, 2)
+  retail_price_suggested Decimal?         @default(0.00) @db.Decimal(12, 2)
+  units_crate            Int?             @default(0)
+  url_reference          String?          @db.Text
+  is_novelty             Boolean?         @default(false)
+  is_large_volume        Boolean?         @default(false)
+  is_validate            Boolean?         @default(false)
+  is_registered_product  Boolean?         @default(false)
+  description            String?          @db.Text
+  status_id              BigInt?          @map("status_id")
+  is_active              Boolean?         @default(true)
+  created_at             DateTime?        @db.Timestamp(0)
+  updated_at             DateTime?        @db.Timestamp(0)
+  order_details          OrderDetail[]
+  product_images         ProductImage[]
+  product_variants       ProductVariant[]
+  catalogs               Catalog?         @relation(fields: [catalog_id], references: [id])
+  categories             Category?        @relation(fields: [category_id], references: [id])
+  product_statuses       ProductStatus?   @relation(fields: [status_id], references: [id])
+  stores                 Store?           @relation(fields: [store_id], references: [id])
+  skus                   Sku[]
 
-  @@unique([store_id, order_number], map: "idx_order_number_per_store")
-  @@index([customer_id, created_at], map: "idx_customer_history")
-  @@index([currency_code], map: "idx_orders_by_currency")
-  @@index([management_type_id], map: "idx_orders_by_management_type")
-  @@index([fulfillment_platform], map: "idx_orders_fulfillment")
-  @@index([store_id, created_at], map: "idx_orders_store_created")
-  @@index([store_id, status_id, created_at], map: "idx_orders_store_status_date")
-  @@index([payment_status_id], map: "payment_status_id")
-  @@index([shipping_status_id], map: "shipping_status_id")
-  @@index([warehouse_id], map: "warehouse_id")
-  @@index([order_number], map: "idx_order_number_search")
-  @@index([status_id, created_at], map: "idx_orders_status_created")
+  @@index([category_id])
+  @@index([store_id, status_id])
+  @@index([store_id])
+  @@index([store_id, is_active])
+  @@index([catalog_id], map: "products_catalog_id_fkey")
+  @@index([status_id], map: "products_status_id_fkey")
+  @@map("products")
 }
 
-model payment_methods {
-  id                              String                            @id @default(uuid()) @db.Char(36)
-  code                            String                            @unique(map: "code") @db.VarChar(20)
-  label                           String                            @db.VarChar(50)
-  description                     String?                           @db.Text
-  country_id                      String?                           @db.Char(36)
-  currency_code                   String                            @db.Char(3)
-  is_active                       Boolean?                          @default(true)
-  created_at                      DateTime?                         @default(now()) @db.Timestamp(0)
-  updated_at                      DateTime?                         @default(now()) @db.Timestamp(0)
-  motorized_liquidation_evidences motorized_liquidation_evidences[]
-  order_payments                  order_payments[]
-  countries                       countries?                        @relation(fields: [country_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "payment_methods_ibfk_1")
+model Sku {
+  id                  BigInt              @id @default(autoincrement())
+  legacy_sku_id       BigInt?             @map("legacy_sku_id")
+  store_id            BigInt?             @map("store_id")
+  product_id          BigInt?             @map("product_id")
+  sku_code            String              @db.VarChar(50)
+  ean                 String?             @unique @db.VarChar(30)
+  regular_price       Decimal             @db.Decimal(12, 2)
+  sales_price         Decimal             @db.Decimal(12, 2)
+  purchase_price      Decimal             @db.Decimal(12, 2)
+  drop_price          Decimal?            @db.Decimal(12, 2)
+  height_cm           Decimal?            @db.Decimal(8, 2)
+  width_cm            Decimal?            @db.Decimal(8, 2)
+  length_cm           Decimal?            @db.Decimal(8, 2)
+  weight_kg           Decimal?            @db.Decimal(8, 2)
+  stock_min           Int?                @default(5)
+  stock_max           Int?                @default(100)
+  track_stock         Boolean?            @default(true)
+  allow_backorder     Boolean?            @default(false)
+  is_active           Boolean?            @default(true)
+  created_at          DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?           @default(now()) @db.Timestamp(0)
+  inventory           Inventory[]
+  kardex              Kardex[]
+  liquidation_details LiquidationDetail[]
+  order_details       OrderDetail[]
+  sku_variant_options SkuVariantOption[]
+  products            Product?            @relation(fields: [product_id], references: [id])
+  stores              Store?              @relation(fields: [store_id], references: [id])
+  warehouse_skus      WarehouseSku[]
 
-  @@index([country_id, is_active], map: "idx_payment_methods_by_country")
-  @@index([currency_code], map: "idx_payment_methods_by_currency")
-  @@index([code], map: "idx_payment_methods_code")
+  @@unique([product_id, sku_code])
+  @@unique([store_id, sku_code])
+  @@index([ean])
+  @@index([store_id, is_active])
+  @@map("skus")
 }
 
-model payment_statuses {
-  id             String           @id @default(uuid()) @db.Char(36)
-  code           String           @unique(map: "code") @db.VarChar(50)
-  label          String           @db.VarChar(100)
-  description    String?          @db.VarChar(255)
-  order_payments order_payments[]
-  orders         orders[]
+model ProductVariant {
+  id                BigInt          @id @default(autoincrement())
+  legacy_variant_id BigInt?         @map("legacy_variant_id")
+  product_id        BigInt?         @map("product_id")
+  name              String          @db.VarChar(100)
+  products          Product?        @relation(fields: [product_id], references: [id])
+  variant_options   VariantOption[]
+
+  @@unique([product_id, legacy_variant_id])
+  @@index([product_id])
+  @@map("product_variants")
 }
 
-model permission_types {
-  id          String        @id @default(uuid()) @db.Char(36)
-  code        String        @unique(map: "code") @db.VarChar(20)
-  name        String        @db.VarChar(50)
-  permissions permissions[]
+model VariantOption {
+  id                  BigInt             @id @default(autoincrement())
+  legacy_option_id    BigInt?            @map("legacy_option_id")
+  variant_id          BigInt?            @map("variant_id")
+  name                String             @db.VarChar(100)
+  sku_variant_options SkuVariantOption[]
+  product_variants    ProductVariant?    @relation(fields: [variant_id], references: [id])
+
+  @@unique([variant_id, legacy_option_id])
+  @@index([variant_id])
+  @@map("variant_options")
 }
 
-model permissions {
-  id               String             @id @default(uuid()) @db.Char(36)
-  code             String             @unique(map: "code") @db.VarChar(50)
-  name             String             @db.VarChar(100)
-  type_id          String?            @db.Char(36)
-  resource         String?            @db.VarChar(50)
-  sub_resource     String?            @db.VarChar(50)
-  description      String?            @db.Text
-  is_active        Boolean?           @default(true)
-  permission_types permission_types?  @relation(fields: [type_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "permissions_ibfk_1")
-  role_permissions role_permissions[]
+model SkuVariantOption {
+  id                BigInt         @id @default(autoincrement())
+  sku_id            BigInt?        @map("sku_id")
+  variant_option_id BigInt?        @map("variant_option_id")
+  skus              Sku?           @relation(fields: [sku_id], references: [id])
+  variant_options   VariantOption? @relation(fields: [variant_option_id], references: [id])
 
-  @@index([type_id], map: "type_id")
+  @@unique([sku_id, variant_option_id])
+  @@index([variant_option_id], map: "sku_variant_options_variant_option_id_fkey")
+  @@map("sku_variant_options")
 }
 
-model product_statuses {
-  id          String     @id @default(uuid()) @db.Char(36)
-  code        String     @unique(map: "code") @db.VarChar(20)
-  label       String     @db.VarChar(50)
-  description String?    @db.Text
-  products    products[]
+model ProductImage {
+  id         BigInt    @id @default(autoincrement())
+  product_id BigInt    @map("product_id")
+  url        String    @db.VarChar(500)
+  title      String?   @db.VarChar(255)
+  alt_text   String?   @db.VarChar(255)
+  position   Int       @default(0)
+  is_primary Boolean?  @default(false)
+  image_type String    @default("PRODUCT") @db.VarChar(20)
+  width      Int?
+  height     Int?
+  file_size  Int?
+  mime_type  String?   @db.VarChar(50)
+  is_active  Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  updated_at DateTime? @default(now()) @db.Timestamp(0)
+  products   Product   @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@index([product_id, is_active])
+  @@index([product_id, position])
+  @@index([product_id, is_primary])
+  @@index([product_id, image_type, position])
+  @@map("product_images")
 }
 
-model product_variants {
-  id                String            @id @default(uuid()) @db.Char(36)
-  legacy_variant_id BigInt?
-  product_id        String?           @db.Char(36)
-  name              String            @db.VarChar(100)
-  products          products?         @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "product_variants_ibfk_1")
-  variant_options   variant_options[]
+model Warehouse {
+  id                  BigInt            @id @default(autoincrement())
+  store_id            BigInt            @map("store_id")
+  warehouse_legacy_id BigInt?           @map("warehouse_legacy_id")
+  name                String?           @db.VarChar(255)
+  address             String?           @db.Text
+  ubigeo_id           BigInt?           @map("ubigeo_id")
+  lat                 Decimal?          @db.Decimal(10, 7)
+  lng                 Decimal?          @db.Decimal(10, 7)
+  is_active           Boolean?          @default(true)
+  created_at          DateTime?         @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?         @db.Timestamp(0)
+  inventory           Inventory[]
+  kardex              Kardex[]
+  orders              Order[]
+  warehouse_settings  WarehouseSetting?
+  warehouse_skus      WarehouseSku[]
+  stores              Store             @relation(fields: [store_id], references: [id])
 
-  @@unique([product_id, legacy_variant_id], map: "idx_unique_product_variant")
-  @@index([product_id], map: "idx_variants_by_product")
+  @@index([store_id])
+  @@index([store_id, is_active])
+  @@map("warehouses")
 }
 
-model products {
-  id                     String             @id @default(uuid()) @db.Char(36)
-  legacy_product_id      BigInt?
-  store_id               String?            @db.Char(36)
-  category_id            String?            @db.Char(36)
-  catalog_id             String?            @db.Char(36)
-  name                   String             @db.VarChar(255)
-  short_description      String?            @db.Text
-  large_description      String?            @db.Text
-  url_image              String?            @db.Text
-  is_product_global      Boolean?           @default(false)
-  sale_price_drop        Decimal?           @default(0.00) @db.Decimal(12, 2)
-  price_drop_crate       Decimal?           @default(0.00) @db.Decimal(12, 2)
-  price_drop_dozen       Decimal?           @default(0.00) @db.Decimal(12, 2)
-  retail_price_suggested Decimal?           @default(0.00) @db.Decimal(12, 2)
-  units_crate            Int?               @default(0)
-  url_reference          String?            @db.Text
-  is_novelty             Boolean?           @default(false)
-  is_large_volume        Boolean?           @default(false)
-  is_validate            Boolean?           @default(false)
-  is_registered_product  Boolean?           @default(false)
-  description            String?            @db.Text
-  status_id              String?            @db.Char(36)
-  is_active              Boolean?           @default(true)
-  created_at             DateTime?          @db.Timestamp(0)
-  updated_at             DateTime?          @db.Timestamp(0)
-  order_details          order_details[]
-  product_images         product_images[]   @relation("ProductToImages")
-  product_variants       product_variants[]
-  stores                 stores?            @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "products_ibfk_1")
-  categories             categories?        @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "products_ibfk_2")
-  catalogs               catalogs?          @relation(fields: [catalog_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "products_ibfk_3")
-  product_statuses       product_statuses?  @relation(fields: [status_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "products_ibfk_4")
-  skus                   skus[]
+model Inventory {
+  id                BigInt     @id @default(autoincrement())
+  warehouse_id      BigInt?    @map("warehouse_id")
+  sku_id            BigInt?    @map("sku_id")
+  quantity_on_hand  Int        @default(0)
+  quantity_reserved Int        @default(0)
+  created_at        DateTime?  @default(now()) @db.Timestamp(0)
+  updated_at        DateTime?  @default(now()) @db.Timestamp(0)
+  skus              Sku?       @relation(fields: [sku_id], references: [id])
+  warehouses        Warehouse? @relation(fields: [warehouse_id], references: [id])
 
-  @@index([catalog_id], map: "catalog_id")
-  @@index([category_id], map: "idx_products_by_category")
-  @@index([store_id, status_id], map: "idx_products_by_status")
-  @@index([store_id], map: "idx_products_by_store")
-  @@index([store_id, is_active], map: "idx_products_by_store_active")
-  @@index([status_id], map: "status_id")
+  @@unique([warehouse_id, sku_id])
+  @@index([warehouse_id, quantity_on_hand])
+  @@index([sku_id], map: "inventory_sku_id_fkey")
+  @@map("inventory")
 }
 
-model role_permissions {
-  role_id       String      @db.Char(36)
-  permission_id String      @db.Char(36)
-  roles         roles       @relation(fields: [role_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "role_permissions_ibfk_1")
-  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "role_permissions_ibfk_2")
+model WarehouseSku {
+  id                      BigInt     @id @default(autoincrement())
+  legacy_warehouse_sku_id BigInt?    @map("legacy_warehouse_sku_id")
+  store_id                BigInt?    @map("store_id")
+  sku_id                  BigInt?    @map("sku_id")
+  warehouse_id            BigInt?    @map("warehouse_id")
+  stock_physical          Int?       @default(0)
+  stock_virtual           Int?       @default(0)
+  stock_reserved          Int?       @default(0)
+  created_at              DateTime?  @default(now()) @db.Timestamp(0)
+  updated_at              DateTime?  @default(now()) @db.Timestamp(0)
+  skus                    Sku?       @relation(fields: [sku_id], references: [id])
+  stores                  Store?     @relation(fields: [store_id], references: [id])
+  warehouses              Warehouse? @relation(fields: [warehouse_id], references: [id])
+
+  @@unique([sku_id, warehouse_id])
+  @@index([warehouse_id, stock_physical])
+  @@index([store_id, sku_id])
+  @@map("warehouse_skus")
+}
+
+model Kardex {
+  id                    BigInt              @id @default(autoincrement())
+  warehouse_id          BigInt?             @map("warehouse_id")
+  sku_id                BigInt?             @map("sku_id")
+  type_movement_id      BigInt?             @map("type_movement_id")
+  status_kardex_id      BigInt?             @map("status_kardex_id")
+  quantity              Int
+  reference             String?             @db.VarChar(255)
+  performed_by_id       BigInt?             @map("performed_by_id")
+  created_at            DateTime?           @db.Timestamp(0)
+  users                 User?               @relation(fields: [performed_by_id], references: [id])
+  skus                  Sku?                @relation(fields: [sku_id], references: [id])
+  kardex_statuses       KardexStatus?       @relation(fields: [status_kardex_id], references: [id])
+  kardex_movement_types KardexMovementType? @relation(fields: [type_movement_id], references: [id])
+  warehouses            Warehouse?          @relation(fields: [warehouse_id], references: [id])
+
+  @@index([reference])
+  @@index([warehouse_id, sku_id, created_at])
+  @@index([sku_id, warehouse_id, created_at])
+  @@index([performed_by_id], map: "kardex_performed_by_id_fkey")
+  @@index([status_kardex_id], map: "kardex_status_kardex_id_fkey")
+  @@index([type_movement_id], map: "kardex_type_movement_id_fkey")
+  @@map("kardex")
+}
+
+model KardexMovementType {
+  id                  BigInt   @id @default(autoincrement())
+  code                String   @unique @db.VarChar(20)
+  name                String   @db.VarChar(50)
+  description         String?  @db.Text
+  is_system_generated Boolean? @default(false)
+  kardex              Kardex[]
+
+  @@map("kardex_movement_types")
+}
+
+model KardexStatus {
+  id          BigInt   @id @default(autoincrement())
+  code        String   @unique @db.VarChar(20)
+  name        String   @db.VarChar(50)
+  description String?  @db.Text
+  kardex      Kardex[]
+
+  @@map("kardex_statuses")
+}
+
+model Courier {
+  id                            BigInt                       @id @default(autoincrement())
+  legacy_transporter_id         BigInt?                      @map("legacy_transporter_id")
+  name                          String                       @db.VarChar(255)
+  country_id                    BigInt?                      @map("country_id")
+  ubigeo_id                     BigInt?                      @map("ubigeo_id")
+  url_image                     String?                      @db.Text
+  support_phone                 String?                      @db.VarChar(50)
+  support_email                 String?                      @db.VarChar(255)
+  is_require_gps                Boolean?                     @default(false)
+  flag_delivery_express         Boolean?                     @default(false)
+  sunday_delivery               Boolean?                     @default(false)
+  is_active                     Boolean?                     @default(true)
+  created_at                    DateTime?                    @db.Timestamp(0)
+  updated_at                    DateTime?                    @db.Timestamp(0)
+  courier_coverages             CourierCoverage[]
+  countries                     Country?                     @relation(fields: [country_id], references: [id])
+  ubigeos                       Ubigeo?                      @relation(fields: [ubigeo_id], references: [id])
+  motorized_liquidation_details MotorizedLiquidationDetail[]
+  motorized_profiles            MotorizedProfile[]
+  order_deliveries              OrderDelivery[]
+  order_shippings               OrderShipping[]
+
+  @@index([country_id, is_active])
+  @@index([ubigeo_id], map: "couriers_ubigeo_id_fkey")
+  @@map("couriers")
+}
+
+model CourierCoverage {
+  id                 BigInt    @id @default(autoincrement())
+  courier_id         BigInt?   @map("courier_id")
+  ubigeo_id          BigInt?   @map("ubigeo_id")
+  delivery_cost      Decimal?  @db.Decimal(12, 2)
+  return_cost        Decimal?  @db.Decimal(12, 2)
+  additional_cost    Decimal?  @db.Decimal(12, 2)
+  allow_cod_override Boolean?  @default(false)
+  max_cod_amount     Decimal?  @db.Decimal(12, 2)
+  is_active          Boolean?  @default(true)
+  created_at         DateTime? @db.Timestamp(0)
+  updated_at         DateTime? @db.Timestamp(0)
+  couriers           Courier?  @relation(fields: [courier_id], references: [id])
+  ubigeos            Ubigeo?   @relation(fields: [ubigeo_id], references: [id])
+
+  @@unique([courier_id, ubigeo_id])
+  @@index([ubigeo_id, is_active])
+  @@map("courier_coverages")
+}
+
+model MotorizedProfile {
+  id                  BigInt              @id @default(autoincrement())
+  person_id           BigInt?             @unique @map("person_id")
+  license_number      String?             @db.VarChar(50)
+  vehicle_type        String?             @db.VarChar(50)
+  vehicle_plate       String?             @db.VarChar(20)
+  vehicle_brand       String?             @db.VarChar(50)
+  vehicle_model       String?             @db.VarChar(50)
+  vehicle_year        Int?
+  courier_id          BigInt?             @map("courier_id")
+  is_available        Boolean?            @default(true)
+  shift_start         DateTime?           @db.Time(0)
+  shift_end           DateTime?           @db.Time(0)
+  base_rate           Decimal?            @default(5.00) @db.Decimal(10, 2)
+  is_active           Boolean?            @default(true)
+  created_at          DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?           @default(now()) @db.Timestamp(0)
+  motorized_coverages MotorizedCoverage[]
+  couriers            Courier?            @relation(fields: [courier_id], references: [id])
+  persons             Person?             @relation(fields: [person_id], references: [id])
+
+  @@index([is_active])
+  @@index([is_available])
+  @@index([courier_id])
+  @@map("motorized_profiles")
+}
+
+model MotorizedCoverage {
+  id                      BigInt            @id @default(autoincrement())
+  motorized_profile_id    BigInt?           @map("motorized_profile_id")
+  ubigeo_id               BigInt?           @map("ubigeo_id")
+  coverage_level          String?           @default("FULL") @db.VarChar(20)
+  custom_rate             Decimal?          @db.Decimal(10, 2)
+  estimated_delivery_time Int?
+  is_active               Boolean?          @default(true)
+  created_at              DateTime?         @default(now()) @db.Timestamp(0)
+  updated_at              DateTime?         @default(now()) @db.Timestamp(0)
+  motorized_profiles      MotorizedProfile? @relation(fields: [motorized_profile_id], references: [id])
+  ubigeos                 Ubigeo?           @relation(fields: [ubigeo_id], references: [id])
+
+  @@unique([motorized_profile_id, ubigeo_id])
+  @@index([is_active])
+  @@index([ubigeo_id])
+  @@map("motorized_coverages")
+}
+
+model Liquidation {
+  id                       BigInt                   @id @default(autoincrement())
+  store_id                 BigInt?                  @map("store_id")
+  period_start             DateTime                 @db.Date
+  period_end               DateTime                 @db.Date
+  status_id                BigInt?                  @map("status_id")
+  total_orders             Int
+  total_delivered          Int
+  total_cash               Decimal                  @db.Decimal(14, 2)
+  total_transfer           Decimal                  @db.Decimal(14, 2)
+  total_pos                Decimal                  @db.Decimal(14, 2)
+  commission_amount        Decimal                  @db.Decimal(14, 2)
+  net_amount               Decimal                  @db.Decimal(14, 2)
+  currency_code            String                   @db.Char(3)
+  created_at               DateTime?                @default(now()) @db.Timestamp(0)
+  updated_at               DateTime?                @default(now()) @db.Timestamp(0)
+  liquidation_activity_log LiquidationActivityLog[]
+  liquidation_details      LiquidationDetail[]
+  liquidation_exports      LiquidationExport[]
+  liquidation_statuses     LiquidationStatus?       @relation(fields: [status_id], references: [id])
+  stores                   Store?                   @relation(fields: [store_id], references: [id])
+
+  @@index([currency_code])
+  @@index([store_id, period_start, period_end, status_id])
+  @@index([store_id, period_start, period_end])
+  @@index([store_id, status_id])
+  @@index([status_id], map: "liquidations_status_id_fkey")
+  @@map("liquidations")
+}
+
+model LiquidationDetail {
+  id                BigInt       @id @default(autoincrement())
+  liquidation_id    BigInt?      @map("liquidation_id")
+  order_id          BigInt?      @map("order_id")
+  sku_id            BigInt?      @map("sku_id")
+  quantity          Int
+  unit_price        Decimal      @db.Decimal(12, 2)
+  total_amount      Decimal      @db.Decimal(12, 2)
+  commission_rate   Decimal      @db.Decimal(5, 4)
+  commission_amount Decimal      @db.Decimal(12, 2)
+  net_amount        Decimal      @db.Decimal(12, 2)
+  created_at        DateTime?    @default(now()) @db.Timestamp(0)
+  liquidations      Liquidation? @relation(fields: [liquidation_id], references: [id])
+  orders            Order?       @relation(fields: [order_id], references: [id])
+  skus              Sku?         @relation(fields: [sku_id], references: [id])
+
+  @@index([liquidation_id])
+  @@index([order_id])
+  @@index([sku_id])
+  @@map("liquidation_details")
+}
+
+model MotorizedLiquidation {
+  id                              BigInt                         @id @default(autoincrement())
+  store_id                        BigInt?                        @map("store_id")
+  motorized_person_id             BigInt?                        @map("motorized_person_id")
+  period_start                    DateTime                       @db.Date
+  period_end                      DateTime                       @db.Date
+  status_id                       BigInt?                        @map("status_id")
+  total_deliveries                Int?                           @default(0)
+  total_delivered                 Int?                           @default(0)
+  total_failed                    Int?                           @default(0)
+  total_incidents                 Int?                           @default(0)
+  subtotal_commission             Decimal                        @db.Decimal(14, 2)
+  total_discounts                 Decimal?                       @default(0.00) @db.Decimal(14, 2)
+  net_amount                      Decimal                        @db.Decimal(14, 2)
+  currency_code                   String                         @db.Char(3)
+  created_at                      DateTime?                      @default(now()) @db.Timestamp(0)
+  updated_at                      DateTime?                      @default(now()) @db.Timestamp(0)
+  motorized_liquidation_details   MotorizedLiquidationDetail[]
+  motorized_liquidation_evidences MotorizedLiquidationEvidence[]
+  persons                         Person?                        @relation(fields: [motorized_person_id], references: [id])
+  liquidation_statuses            LiquidationStatus?             @relation(fields: [status_id], references: [id])
+  stores                          Store?                         @relation(fields: [store_id], references: [id])
+
+  @@index([store_id, motorized_person_id, period_start, period_end])
+  @@index([motorized_person_id, created_at])
+  @@index([status_id])
+  @@map("motorized_liquidations")
+}
+
+model MotorizedLiquidationDetail {
+  id                       BigInt                @id @default(autoincrement())
+  motorized_liquidation_id BigInt?               @map("motorized_liquidation_id")
+  order_delivery_id        BigInt?               @map("order_delivery_id")
+  delivery_fee             Decimal               @db.Decimal(12, 2)
+  delivery_date            DateTime              @db.Timestamp(0)
+  delivery_status_code     String                @db.VarChar(20)
+  base_commission          Decimal               @db.Decimal(12, 2)
+  additional_commission    Decimal?              @default(0.00) @db.Decimal(12, 2)
+  total_commission         Decimal               @db.Decimal(12, 2)
+  incident_discount        Decimal?              @default(0.00) @db.Decimal(12, 2)
+  net_commission           Decimal               @db.Decimal(12, 2)
+  order_id                 BigInt?               @map("order_id")
+  courier_id               BigInt?               @map("courier_id")
+  notes                    String?               @db.Text
+  created_at               DateTime?             @default(now()) @db.Timestamp(0)
+  orderShippingId          BigInt?
+  motorized_incidents      MotorizedIncident[]
+  couriers                 Courier?              @relation(fields: [courier_id], references: [id])
+  motorized_liquidations   MotorizedLiquidation? @relation(fields: [motorized_liquidation_id], references: [id])
+  OrderShipping            OrderShipping?        @relation(fields: [orderShippingId], references: [id])
+  order_deliveries         OrderDelivery?        @relation(fields: [order_delivery_id], references: [id])
+  orders                   Order?                @relation(fields: [order_id], references: [id])
+
+  @@index([order_delivery_id])
+  @@index([motorized_liquidation_id])
+  @@index([courier_id], map: "motorized_liquidation_details_courier_id_fkey")
+  @@index([orderShippingId], map: "motorized_liquidation_details_orderShippingId_fkey")
+  @@index([order_id], map: "motorized_liquidation_details_order_id_fkey")
+  @@map("motorized_liquidation_details")
+}
+
+model BankAccount {
+  id                BigInt      @id @default(autoincrement())
+  owner_type        String      @db.VarChar(20)
+  owner_id          BigInt?     @map("owner_id")
+  bank_code         String      @db.VarChar(50)
+  account_number    String      @db.VarChar(100)
+  cci               String?     @db.VarChar(20)
+  account_type_id   BigInt      @map("account_type_id")
+  currency_code     String?     @default("PEN") @db.Char(3)
+  holder_name       String      @db.VarChar(255)
+  holder_doc_type   String?     @db.VarChar(20)
+  holder_doc_number String?     @db.VarChar(50)
+  is_primary        Boolean?    @default(false)
+  is_active         Boolean?    @default(true)
+  created_at        DateTime?   @default(now()) @db.Timestamp(0)
+  updated_at        DateTime?   @default(now()) @db.Timestamp(0)
+  storeId           BigInt?
+  account_types     AccountType @relation(fields: [account_type_id], references: [id])
+  Store             Store?      @relation(fields: [storeId], references: [id])
+
+  @@index([owner_type, owner_id])
+  @@index([bank_code, account_number])
+  @@index([account_type_id], map: "bank_accounts_account_type_id_fkey")
+  @@index([storeId], map: "bank_accounts_storeId_fkey")
+  @@map("bank_accounts")
+}
+
+model PaymentMethod {
+  id                              BigInt                         @id @default(autoincrement())
+  code                            String                         @unique @db.VarChar(20)
+  name                            String                         @db.VarChar(50)
+  description                     String?                        @db.Text
+  country_id                      BigInt?                        @map("country_id")
+  currency_code                   String                         @db.Char(3)
+  is_active                       Boolean?                       @default(true)
+  created_at                      DateTime?                      @default(now()) @db.Timestamp(0)
+  updated_at                      DateTime?                      @default(now()) @db.Timestamp(0)
+  motorized_liquidation_evidences MotorizedLiquidationEvidence[]
+  order_payments                  OrderPayment[]
+  countries                       Country?                       @relation(fields: [country_id], references: [id])
+
+  @@index([country_id, is_active])
+  @@index([currency_code])
+  @@index([code])
+  @@map("payment_methods")
+}
+
+model Catalog {
+  id         BigInt    @id @default(autoincrement())
+  store_id   BigInt?   @map("store_id")
+  name       String?   @db.VarChar(255)
+  is_public  Boolean?  @default(false)
+  created_at DateTime? @db.Timestamp(0)
+  updated_at DateTime? @db.Timestamp(0)
+  stores     Store?    @relation(fields: [store_id], references: [id])
+  products   Product[]
+
+  @@index([store_id])
+  @@map("catalogs")
+}
+
+model Category {
+  id         BigInt     @id @default(autoincrement())
+  store_id   BigInt?    @map("store_id")
+  parent_id  BigInt?    @map("parent_id")
+  name       String?    @db.VarChar(255)
+  is_active  Boolean?   @default(true)
+  created_at DateTime?  @db.Timestamp(0)
+  updated_at DateTime?  @db.Timestamp(0)
+  parent     Category?  @relation("CategoryParent", fields: [parent_id], references: [id])
+  children   Category[] @relation("CategoryParent")
+  stores     Store?     @relation(fields: [store_id], references: [id])
+  products   Product[]
+
+  @@index([store_id])
+  @@index([store_id, is_active])
+  @@index([parent_id])
+  @@map("categories")
+}
+
+model Role {
+  id                BigInt            @id @default(autoincrement())
+  name              String            @unique @db.VarChar(50)
+  description       String?           @db.VarChar(255)
+  is_active         Boolean?          @default(true)
+  created_at        DateTime?         @db.Timestamp(0)
+  role_permissions  RolePermission[]
+  store_memberships StoreMembership[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id               BigInt           @id @default(autoincrement())
+  code             String           @unique @db.VarChar(50)
+  name             String           @db.VarChar(100)
+  type_id          BigInt?          @map("type_id")
+  resource         String?          @db.VarChar(50)
+  sub_resource     String?          @db.VarChar(50)
+  description      String?          @db.Text
+  is_active        Boolean?         @default(true)
+  permission_types PermissionType?  @relation(fields: [type_id], references: [id])
+  role_permissions RolePermission[]
+
+  @@index([type_id], map: "permissions_type_id_fkey")
+  @@map("permissions")
+}
+
+model PermissionType {
+  id          BigInt       @id @default(autoincrement())
+  code        String       @unique @db.VarChar(20)
+  name        String       @db.VarChar(50)
+  permissions Permission[]
+
+  @@map("permission_types")
+}
+
+model RolePermission {
+  role_id       BigInt
+  permission_id BigInt
+  permissions   Permission @relation(fields: [permission_id], references: [id])
+  roles         Role       @relation(fields: [role_id], references: [id])
 
   @@id([role_id, permission_id])
-  @@index([permission_id], map: "permission_id")
+  @@index([permission_id], map: "role_permissions_permission_id_fkey")
+  @@map("role_permissions")
 }
 
-model shipping_statuses {
-  id          String   @id @default(uuid()) @db.Char(36)
-  code        String   @unique(map: "code") @db.VarChar(50)
-  label       String   @db.VarChar(100)
-  description String?  @db.VarChar(255)
-  orders      orders[]
+model StoreMembership {
+  id            BigInt    @id @default(autoincrement())
+  user_id       BigInt?   @map("user_id")
+  store_id      BigInt?   @map("store_id")
+  role_id       BigInt?   @map("role_id")
+  is_owner      Boolean?  @default(false)
+  employee_code String?   @db.VarChar(50)
+  hire_date     DateTime? @db.Date
+  is_active     Boolean?  @default(true)
+  created_at    DateTime? @default(now()) @db.Timestamp(0)
+  updated_at    DateTime? @default(now()) @db.Timestamp(0)
+  roles         Role?     @relation(fields: [role_id], references: [id])
+  stores        Store?    @relation(fields: [store_id], references: [id])
+  users         User?     @relation(fields: [user_id], references: [id])
+
+  @@unique([user_id, store_id])
+  @@index([is_active])
+  @@index([store_id, role_id])
+  @@index([role_id], map: "store_memberships_role_id_fkey")
+  @@map("store_memberships")
 }
 
-model sku_variant_options {
-  id                String           @id @default(uuid()) @db.Char(36)
-  sku_id            String?          @db.Char(36)
-  variant_option_id String?          @db.Char(36)
-  skus              skus?            @relation(fields: [sku_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "sku_variant_options_ibfk_1")
-  variant_options   variant_options? @relation(fields: [variant_option_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "sku_variant_options_ibfk_2")
+model Wallet {
+  id                  BigInt              @id @default(autoincrement())
+  store_id            BigInt?             @map("store_id")
+  currency_code       String              @db.Char(3)
+  balance             Decimal?            @default(0.00) @db.Decimal(14, 2)
+  owner_type          String?             @default("STORE") @db.VarChar(20)
+  owner_id            BigInt?             @map("owner_id")
+  version             Int?                @default(1)
+  is_active           Boolean?            @default(true)
+  created_at          DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?           @default(now()) @db.Timestamp(0)
+  wallet_transactions WalletTransaction[]
+  stores              Store?              @relation(fields: [store_id], references: [id])
 
-  @@unique([sku_id, variant_option_id], map: "idx_unique_sku_option")
-  @@index([variant_option_id], map: "variant_option_id")
+  @@unique([store_id, owner_type, owner_id])
+  @@index([version])
+  @@map("wallets")
 }
 
-model skus {
-  id                  String                @id @default(uuid()) @db.Char(36)
-  legacy_sku_id       BigInt?
-  store_id            String?               @db.Char(36)
-  product_id          String?               @db.Char(36)
-  sku_code            String                @db.VarChar(50)
-  ean                 String?               @db.VarChar(30)
-  regular_price       Decimal               @db.Decimal(12, 2)
-  sales_price         Decimal               @db.Decimal(12, 2)
-  purchase_price      Decimal               @db.Decimal(12, 2)
-  drop_price          Decimal?              @db.Decimal(12, 2)
-  height_cm           Decimal?              @db.Decimal(8, 2)
-  width_cm            Decimal?              @db.Decimal(8, 2)
-  length_cm           Decimal?              @db.Decimal(8, 2)
-  weight_kg           Decimal?              @db.Decimal(8, 2)
-  stock_min           Int?                  @default(5)
-  stock_max           Int?                  @default(100)
-  track_stock         Boolean?              @default(true)
-  allow_backorder     Boolean?              @default(false)
-  is_active           Boolean?              @default(true)
-  created_at          DateTime?             @default(now()) @db.Timestamp(0)
-  updated_at          DateTime?             @default(now()) @db.Timestamp(0)
-  inventory           inventory[]
-  kardex              kardex[]
-  liquidation_details liquidation_details[]
-  order_details       order_details[]
-  sku_variant_options sku_variant_options[]
-  stores              stores?               @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "skus_ibfk_1")
-  products            products?             @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "skus_ibfk_2")
-  warehouse_skus      warehouse_skus[]
-
-  @@unique([product_id, sku_code], map: "idx_unique_sku_per_product")
-  @@unique([sku_code, store_id], map: "sku_code_store_id")
-  @@unique([store_id, sku_code], map: "idx_unique_sku_per_store")
-  @@index([ean], map: "idx_sku_by_ean")
-  @@index([store_id, is_active], map: "idx_skus_by_store_active")
-}
-
-model sqs_migration_idempotency {
-  event_id      String    @id @db.VarChar(100)
-  processed_at  DateTime? @default(now()) @db.Timestamp(0)
-  status        String?   @default("PROCESSED") @db.VarChar(50)
-  error_message String?   @db.Text
-
-  @@index([processed_at], map: "idx_processed_at")
-}
-
-model tracking_event_types {
-  id          String   @id @default(uuid()) @db.Char(36)
-  code        String   @unique(map: "code") @db.VarChar(20)
-  label       String   @db.VarChar(50)
-  description String?  @db.Text
-  is_active   Boolean? @default(true)
-}
-
-model ubigeos_levels {
-  id          String     @id @default(uuid()) @db.Char(36)
-  country_id  String?    @db.Char(36)
-  level       Int
-  name        String     @db.VarChar(50)
-  description String?    @db.Text
-  is_active   Boolean?   @default(true)
-  ubigeos     Ubigeo[]
-  countries   countries? @relation(fields: [country_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ubigeos_levels_ibfk_1")
-
-  @@unique([country_id, level], map: "idx_level_unique_per_country")
-}
-
-model variant_options {
-  id                  String                @id @default(uuid()) @db.Char(36)
-  legacy_option_id    BigInt?
-  variant_id          String?               @db.Char(36)
-  name                String                @db.VarChar(100)
-  sku_variant_options sku_variant_options[]
-  product_variants    product_variants?     @relation(fields: [variant_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "variant_options_ibfk_1")
-
-  @@unique([variant_id, legacy_option_id], map: "idx_unique_variant_option")
-  @@index([variant_id], map: "idx_options_by_variant")
-}
-
-model wallet_transactions {
-  id               String    @id @default(uuid()) @db.Char(36)
-  wallet_id        String?   @db.Char(36)
+model WalletTransaction {
+  id               BigInt    @id @default(autoincrement())
+  wallet_id        BigInt?   @map("wallet_id")
   transaction_type String    @db.VarChar(20)
   status           String?   @default("PENDING") @db.VarChar(20)
   amount           Decimal   @db.Decimal(14, 2)
   balance_after    Decimal   @db.Decimal(14, 2)
   reference_type   String?   @db.VarChar(50)
-  reference_id     String?   @db.Char(36)
+  reference_id     BigInt?   @map("reference_id")
   description      String?   @db.Text
   metadata         Json?
-  performed_by_id  String?   @db.Char(36)
+  performed_by_id  BigInt?   @map("performed_by_id")
   previous_version Int
   created_at       DateTime? @default(now()) @db.Timestamp(0)
-  wallets          wallets?  @relation(fields: [wallet_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "wallet_transactions_ibfk_1")
-  users            users?    @relation(fields: [performed_by_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "wallet_transactions_ibfk_2")
+  users            User?     @relation(fields: [performed_by_id], references: [id])
+  wallets          Wallet?   @relation(fields: [wallet_id], references: [id])
 
-  @@index([wallet_id, status, created_at], map: "idx_wallet_tx_completed_timeline")
-  @@index([reference_type, reference_id], map: "idx_wallet_tx_reference")
-  @@index([status], map: "idx_wallet_tx_status")
-  @@index([wallet_id, created_at], map: "idx_wallet_tx_timeline")
-  @@index([previous_version], map: "idx_wallet_tx_version")
-  @@index([performed_by_id], map: "performed_by_id")
+  @@index([wallet_id, status, created_at])
+  @@index([reference_type, reference_id])
+  @@index([status])
+  @@index([wallet_id, created_at])
+  @@index([previous_version])
+  @@index([performed_by_id], map: "wallet_transactions_performed_by_id_fkey")
+  @@map("wallet_transactions")
 }
 
-model wallets {
-  id                  String                @id @default(uuid()) @db.Char(36)
-  store_id            String?               @db.Char(36)
-  currency_code       String                @db.Char(3)
-  balance             Decimal               @default(0.00) @db.Decimal(14, 2)
-  owner_type          String?               @default("STORE") @db.VarChar(20)
-  owner_id            String?               @db.Char(36)
-  version             Int?                  @default(1)
-  is_active           Boolean?              @default(true)
-  created_at          DateTime?             @default(now()) @db.Timestamp(0)
-  updated_at          DateTime?             @default(now()) @db.Timestamp(0)
-  wallet_transactions wallet_transactions[]
-  stores              stores?               @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "wallets_ibfk_1")
+model Integration {
+  id                   BigInt               @id @default(autoincrement())
+  store_id             BigInt?              @map("store_id")
+  type                 String               @db.VarChar(50)
+  is_active            Boolean?             @default(true)
+  config               Json?
+  created_at           DateTime?            @default(now()) @db.Timestamp(0)
+  updated_at           DateTime?            @default(now()) @db.Timestamp(0)
+  integration_webhooks IntegrationWebhook[]
+  stores               Store?               @relation(fields: [store_id], references: [id])
 
-  @@unique([store_id, owner_type, owner_id], map: "idx_wallet_unique_owner")
-  @@index([version], map: "idx_wallet_version")
+  @@unique([store_id, type])
+  @@map("integrations")
 }
 
-model warehouse_skus {
-  id                      String      @id @default(uuid()) @db.Char(36)
-  legacy_warehouse_sku_id BigInt?
-  store_id                String?     @db.Char(36)
-  sku_id                  String?     @db.Char(36)
-  warehouse_id            String?     @db.Char(36)
-  stock_physical          Int?        @default(0)
-  stock_virtual           Int?        @default(0)
-  stock_reserved          Int?        @default(0)
-  created_at              DateTime?   @default(now()) @db.Timestamp(0)
-  updated_at              DateTime?   @default(now()) @db.Timestamp(0)
-  stores                  stores?     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "warehouse_skus_ibfk_1")
-  skus                    skus?       @relation(fields: [sku_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "warehouse_skus_ibfk_2")
-  warehouses              warehouses? @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "warehouse_skus_ibfk_3")
+model IntegrationWebhook {
+  id             BigInt       @id @default(autoincrement())
+  integration_id BigInt?      @map("integration_id")
+  event_type     String       @db.VarChar(100)
+  payload        Json?
+  processed_at   DateTime?    @db.Timestamp(0)
+  created_at     DateTime?    @default(now()) @db.Timestamp(0)
+  integrations   Integration? @relation(fields: [integration_id], references: [id])
 
-  @@unique([sku_id, warehouse_id], map: "idx_unique_warehouse_sku")
-  @@index([warehouse_id, stock_physical], map: "idx_warehouse_sku_by_stock")
-  @@index([store_id, sku_id], map: "idx_warehouse_sku_by_store")
+  @@index([event_type, processed_at])
+  @@index([integration_id, event_type])
+  @@map("integration_webhooks")
 }
 
-model warehouses {
-  id                  String   @id @db.Char(36)
-  store_id            String   @db.Char(36)
-  warehouse_legacy_id BigInt?
-  name                String?  @db.VarChar(255)
-  address             String?  @db.Text
-  ubigeo_id           String?  @db.Char(36)
-  lat                 Decimal? @db.Decimal(10, 7)
-  lng                 Decimal? @db.Decimal(10, 7)
-  is_active           Boolean  @default(true)
-  created_at          DateTime @default(now()) @db.Timestamp(0)
-  updated_at          DateTime @updatedAt @db.Timestamp(0)
+model IncidentType {
+  id                  BigInt              @id @default(autoincrement())
+  store_id            BigInt?             @map("store_id")
+  code                String              @unique @db.VarChar(20)
+  label               String              @db.VarChar(100)
+  description         String?             @db.Text
+  default_discount    Decimal?            @default(0.00) @db.Decimal(12, 2)
+  is_active           Boolean?            @default(true)
+  created_at          DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?           @default(now()) @db.Timestamp(0)
+  stores              Store?              @relation(fields: [store_id], references: [id])
+  motorized_incidents MotorizedIncident[]
 
-  // Relación inversa con warehouse_settings
-  warehouse_settings warehouse_settings?
-  inventory          inventory[]
-  kardex             kardex[]
-  orders             orders[]
-  warehouse_skus     warehouse_skus[]
-  stores             stores?             @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "warehouses_ibfk_1")
-
-  @@index([store_id], map: "idx_warehouse_by_store")
-  @@index([store_id, is_active], map: "idx_warehouse_by_store_active")
-  @@map("warehouses")
+  @@index([code])
+  @@index([store_id])
+  @@map("incident_types")
 }
 
-model terms_conditions {
-  id          String                   @id @default(uuid()) @db.Char(36)
-  title       String                   @db.VarChar(255)
-  content     String                   @db.LongText
-  version     Int                      @default(1)
-  is_active   Boolean                  @default(true)
-  created_at  DateTime                 @default(now()) @db.Timestamp(0)
-  updated_at  DateTime                 @updatedAt @db.Timestamp(0)
-  description String?                  @db.Text
-  role        String?                  @db.VarChar(50)
-  acceptances user_terms_acceptances[]
+model MotorizedIncident {
+  id                              BigInt                      @id @default(autoincrement())
+  motorized_liquidation_detail_id BigInt?                     @map("motorized_liquidation_detail_id")
+  incident_type_id                BigInt?                     @map("incident_type_id")
+  description                     String?                     @db.Text
+  discount_amount                 Decimal                     @db.Decimal(12, 2)
+  evidence_url                    String?                     @db.Text
+  evidence_metadata               Json?
+  reported_by_id                  BigInt?                     @map("reported_by_id")
+  resolved_by_id                  BigInt?                     @map("resolved_by_id")
+  status                          String?                     @default("PENDING") @db.VarChar(20)
+  created_at                      DateTime?                   @default(now()) @db.Timestamp(0)
+  updated_at                      DateTime?                   @default(now()) @db.Timestamp(0)
+  incident_types                  IncidentType?               @relation(fields: [incident_type_id], references: [id])
+  motorized_liquidation_details   MotorizedLiquidationDetail? @relation(fields: [motorized_liquidation_detail_id], references: [id])
+  reported_by                     User?                       @relation("reportedBy", fields: [reported_by_id], references: [id])
+  resolved_by                     User?                       @relation("resolvedBy", fields: [resolved_by_id], references: [id])
+
+  @@index([motorized_liquidation_detail_id])
+  @@index([status])
+  @@index([incident_type_id])
+  @@index([reported_by_id], map: "motorized_incidents_reported_by_id_fkey")
+  @@index([resolved_by_id], map: "motorized_incidents_resolved_by_id_fkey")
+  @@map("motorized_incidents")
+}
+
+model MotorizedLiquidationEvidence {
+  id                       BigInt                @id @default(autoincrement())
+  motorized_liquidation_id BigInt?               @map("motorized_liquidation_id")
+  voucher_number           String                @db.VarChar(50)
+  voucher_date             DateTime              @db.Date
+  amount                   Decimal               @db.Decimal(12, 2)
+  file_url                 String?               @db.Text
+  payment_method_id        BigInt?               @map("payment_method_id")
+  operation_code           String?               @unique @db.VarChar(50)
+  created_by_id            BigInt?               @map("created_by_id")
+  created_at               DateTime?             @default(now()) @db.Timestamp(0)
+  updated_at               DateTime?             @default(now()) @db.Timestamp(0)
+  users                    User?                 @relation(fields: [created_by_id], references: [id])
+  motorized_liquidations   MotorizedLiquidation? @relation(fields: [motorized_liquidation_id], references: [id])
+  payment_methods          PaymentMethod?        @relation(fields: [payment_method_id], references: [id])
+
+  @@index([motorized_liquidation_id])
+  @@index([created_by_id])
+  @@index([payment_method_id], map: "motorized_liquidation_evidences_payment_method_id_fkey")
+  @@map("motorized_liquidation_evidences")
+}
+
+model LiquidationActivityLog {
+  id             BigInt       @id @default(autoincrement())
+  liquidation_id BigInt?      @map("liquidation_id")
+  action         String       @db.VarChar(50)
+  performed_by   BigInt?      @map("performed_by")
+  details        Json?
+  created_at     DateTime?    @default(now()) @db.Timestamp(0)
+  liquidations   Liquidation? @relation(fields: [liquidation_id], references: [id])
+  users          User?        @relation(fields: [performed_by], references: [id])
+
+  @@index([liquidation_id])
+  @@index([performed_by])
+  @@map("liquidation_activity_log")
+}
+
+model LiquidationExport {
+  id             BigInt       @id @default(autoincrement())
+  liquidation_id BigInt?      @map("liquidation_id")
+  file_url       String       @db.VarChar(500)
+  exported_by    BigInt?      @map("exported_by")
+  exported_at    DateTime?    @default(now()) @db.Timestamp(0)
+  users          User?        @relation(fields: [exported_by], references: [id])
+  liquidations   Liquidation? @relation(fields: [liquidation_id], references: [id])
+
+  @@index([exported_by])
+  @@index([liquidation_id])
+  @@map("liquidation_exports")
+}
+
+model TermsCondition {
+  id                     BigInt                @id @default(autoincrement())
+  title                  String                @db.VarChar(255)
+  content                String                @db.LongText
+  version                Int?                  @default(1)
+  is_active              Boolean?              @default(true)
+  created_at             DateTime?             @default(now()) @db.Timestamp(0)
+  updated_at             DateTime?             @db.Timestamp(0)
+  description            String?               @db.Text
+  role                   String?               @db.VarChar(50)
+  user_terms_acceptances UserTermsAcceptance[]
 
   @@map("terms_conditions")
 }
 
-model user_terms_acceptances {
-  id          Int              @id @default(autoincrement())
-  user_id     String           @db.Char(36)
-  terms_id    String           @db.Char(36)
-  accepted_at DateTime         @default(now()) @db.Timestamp(0)
-  ip_address  String?          @db.VarChar(45)
-  user_agent  String?          @db.Text
-  terms       terms_conditions @relation(fields: [terms_id], references: [id], onDelete: Cascade)
-  user        users            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+model UserTermsAcceptance {
+  id               BigInt         @id @default(autoincrement())
+  user_id          BigInt         @map("user_id")
+  terms_id         BigInt         @map("terms_id")
+  accepted_at      DateTime?      @default(now()) @db.Timestamp(0)
+  ip_address       String?        @db.VarChar(45)
+  user_agent       String?        @db.Text
+  terms_conditions TermsCondition @relation(fields: [terms_id], references: [id])
+  users            User           @relation(fields: [user_id], references: [id])
 
   @@unique([user_id, terms_id])
   @@index([user_id])
@@ -1235,9 +1291,9 @@ model user_terms_acceptances {
   @@map("user_terms_acceptances")
 }
 
-model store_settings {
-  id                         String   @id @default(uuid())
-  store_id                   String   @unique
+model StoreSetting {
+  id                         BigInt   @id @default(autoincrement())
+  store_id                   BigInt   @unique @map("store_id")
   company_prefix             String?  @db.VarChar(20)
   currency_code              String   @default("PEN") @db.Char(3)
   timezone                   String?  @default("America/Lima") @db.VarChar(50)
@@ -1246,104 +1302,114 @@ model store_settings {
   is_email_transfer_verified Boolean  @default(false)
   config                     Json?
   created_at                 DateTime @default(now())
-  updated_at                 DateTime @updatedAt
-  account_verified           Boolean  @default(false)
-  store                      stores   @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  updated_at                 DateTime
+  account_verified           Boolean? @default(false)
+  stores                     Store    @relation(fields: [store_id], references: [id], onDelete: Cascade)
 
   @@index([store_id])
   @@map("store_settings")
 }
 
-model account_types {
-  id           String          @id @default(uuid()) @db.Char(36)
-  code         String          @unique @db.VarChar(20)
-  label        String          @db.VarChar(100)
-  description  String?         @db.Text
-  is_active    Boolean         @default(true)
-  bankAccounts bank_accounts[]
-
-  @@map("account_types")
-}
-
-model bank_accounts {
-  id                String        @id @default(uuid()) @db.Char(36)
-  owner_type        String        @db.VarChar(20)
-  owner_id          String?       @db.Char(36)
-  bank_code         String        @db.VarChar(50)
-  account_number    String        @db.VarChar(100)
-  cci               String?       @db.VarChar(20)
-  account_type_id   String        @db.Char(36)
-  currency_code     String        @default("PEN") @db.Char(3)
-  holder_name       String        @db.VarChar(255)
-  holder_doc_type   String?       @db.VarChar(20)
-  holder_doc_number String?       @db.VarChar(50)
-  is_primary        Boolean       @default(false)
-  is_active         Boolean       @default(true)
-  created_at        DateTime      @default(now()) @db.Timestamp(0)
-  updated_at        DateTime      @default(now()) @updatedAt @db.Timestamp(0)
-  accountType       account_types @relation(fields: [account_type_id], references: [id], map: "bank_accounts_account_type_fkey")
-
-  @@index([owner_type, owner_id])
-  @@index([bank_code, account_number])
-  @@index([account_type_id], map: "bank_accounts_account_type_fkey")
-  @@index([owner_id], map: "bank_accounts_warehouse_fkey")
-  @@map("bank_accounts")
-}
-
-model warehouse_settings {
-  id           String @id @db.Char(36)
-  warehouse_id String @unique @db.Char(36)
-
-  // Servicio Express
-  flag_delivery_express       Boolean   @default(false)
-  hour_delivery_express_start DateTime? @db.Time
-  hour_delivery_express_end   DateTime? @db.Time
-
-  // Contraentrega
-  is_cash_on_delivery          Boolean   @default(false)
-  deadline_time_delivery_local DateTime? @db.Time
-  deadline_time_external       DateTime? @db.Time
-  is_delivery_same_day_main    Boolean   @default(false)
-
-  // Agencia (Shalom)
-  is_drop_shalom       Boolean   @default(false)
-  shalom_origin_in     String?   @db.VarChar(200)
-  deadline_time_agency DateTime? @db.Time
-
-  // Configuraciones adicionales
-  is_not_work_holiday             Boolean @default(false)
-  is_move_massive_dispatch_status Boolean @default(false)
-
-  created_at DateTime @default(now()) @db.Timestamp(0)
-  updated_at DateTime @updatedAt @db.Timestamp(0)
-
-   warehouse warehouses @relation(fields: [warehouse_id], references: [id], onDelete: Cascade)
+model WarehouseSetting {
+  id                              BigInt    @id @default(autoincrement())
+  warehouse_id                    BigInt    @unique @map("warehouse_id")
+  flag_delivery_express           Boolean   @default(false)
+  hour_delivery_express_start     DateTime? @db.Time(0)
+  hour_delivery_express_end       DateTime? @db.Time(0)
+  is_cash_on_delivery             Boolean?  @default(false)
+  deadline_time_delivery_local    DateTime? @db.Time(0)
+  deadline_time_external          DateTime? @db.Time(0)
+  is_delivery_same_day_main       Boolean   @default(false)
+  is_drop_shalom                  Boolean?  @default(false)
+  shalom_origin_in                String?   @db.VarChar(200)
+  deadline_time_agency            DateTime? @db.Time(0)
+  is_not_work_holiday             Boolean?  @default(false)
+  is_move_massive_dispatch_status Boolean   @default(false)
+  created_at                      DateTime? @default(now()) @db.Timestamp(0)
+  updated_at                      DateTime? @db.Timestamp(0)
+  warehouses                      Warehouse @relation(fields: [warehouse_id], references: [id], onDelete: Cascade)
 
   @@map("warehouse_settings")
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model product_images {
-  id         String    @id @db.Char(36)
-  product_id String    @db.Char(36)
-  url        String    @db.VarChar(500)
-  title      String?   @db.VarChar(255)
-  alt_text   String?   @db.VarChar(255)
-  position   Int       @default(0)
-  is_primary Boolean   @default(false)
-  image_type String    @default("PRODUCT") @db.VarChar(20)
-  width      Int?
-  height     Int?
-  file_size  Int?
-  mime_type  String?   @db.VarChar(50)
-  is_active  Boolean   @default(true)
-  created_at DateTime? @default(now()) @db.Timestamp(0)
-  updated_at DateTime? @default(now()) @db.Timestamp(0)
-  products   products  @relation("ProductToImages", fields: [product_id], references: [id], onDelete: Cascade)
+model CustomerAddress {
+  id           BigInt    @id @default(autoincrement())
+  customer_id  BigInt?   @map("customer_id")
+  address      String    @db.Text
+  reference    String?   @db.Text
+  ubigeo_id    BigInt?   @map("ubigeo_id")
+  country_code String    @db.Char(3)
+  lat          Decimal?  @db.Decimal(10, 7)
+  lng          Decimal?  @db.Decimal(10, 7)
+  is_default   Boolean?  @default(false)
+  created_at   DateTime? @default(now()) @db.Timestamp(0)
+  updated_at   DateTime? @default(now()) @db.Timestamp(0)
+  customers    Customer? @relation(fields: [customer_id], references: [id])
+  ubigeos      Ubigeo?   @relation(fields: [ubigeo_id], references: [id])
 
-  @@index([product_id, is_active], map: "idx_product_images_active")
-  @@index([product_id, position], map: "idx_product_images_by_position")
-  @@index([product_id], map: "idx_product_images_by_product")
-  @@index([product_id, is_primary], map: "idx_product_images_primary")
-  @@index([product_id, image_type, position], map: "idx_product_images_type")
+  @@index([country_code])
+  @@index([customer_id])
+  @@index([ubigeo_id])
+  @@map("customer_addresses")
+}
+
+model Idempotency {
+  id              BigInt   @id @default(autoincrement())
+  idempotency_key String   @unique @db.VarChar(255)
+  status          String   @default("PROCESSED") @db.VarChar(30)
+  processed_at    DateTime @default(now())
+  metadata        Json?
+  created_at      DateTime @default(now())
+
+  @@index([status, created_at])
+  @@map("idempotency")
+}
+
+// ============================================
+// MODELO: tracking_event_types
+// ============================================
+
+model TrackingEventType {
+  id          BigInt    @id @default(autoincrement())
+  code        String    @unique @db.VarChar(20)
+  label       String    @db.VarChar(50)
+  description String?   @db.Text
+  is_active   Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.Timestamp(0)
+  updated_at  DateTime? @default(now()) @db.Timestamp(0)
+
+  // Relaciones (si existiera una tabla de tracking_events)
+  // tracking_events TrackingEvent[]
+  TrackingEvent TrackingEvent[]
+
+  @@index([is_active])
+  @@index([code])
+  @@map("tracking_event_types")
+}
+
+// ============================================
+// MODELO: tracking_events
+// ============================================
+
+model TrackingEvent {
+  id                     BigInt    @id @default(autoincrement())
+  order_id               BigInt    @map("order_id")
+  tracking_event_type_id BigInt    @map("tracking_event_type_id")
+  user_id                BigInt?   @map("user_id")
+  description            String?   @db.Text
+  metadata               Json?
+  location               String?   @db.VarChar(255)
+  lat                    Decimal?  @db.Decimal(10, 7)
+  lng                    Decimal?  @db.Decimal(10, 7)
+  created_at             DateTime? @default(now()) @db.Timestamp(0)
+
+  // Relaciones
+  orders               Order             @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  tracking_event_types TrackingEventType @relation(fields: [tracking_event_type_id], references: [id])
+  users                User?             @relation(fields: [user_id], references: [id])
+
+  @@index([order_id])
+  @@index([tracking_event_type_id])
+  @@index([created_at])
+  @@map("tracking_events")
 }

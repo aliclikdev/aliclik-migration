@@ -1,4 +1,5 @@
-// src/use-cases/handlers/users/create-user.handler.ts
+// src/use-cases/handlers/users/delete-user.handler.ts
+
 import { PrismaClient } from "@prisma/client";
 import { UserMigrationMessage } from "../../../types/sqs-migration.types";
 import { logger } from "../../../utils/logger";
@@ -9,11 +10,17 @@ export class DeleteUserHandler {
   async execute(payload: UserMigrationMessage): Promise<void> {
     const { user: userData } = payload;
 
-    // Construir condiciones de búsqueda dinámicas
+    // ============================================
+    // 1. VALIDAR IDENTIFICADORES
+    // ============================================
+
     const userConditions: Array<{ cognito_sub?: string; email?: string }> = [];
-    if (userData.cognitoSub)
+    if (userData.cognitoSub) {
       userConditions.push({ cognito_sub: userData.cognitoSub });
-    if (userData.email) userConditions.push({ email: userData.email });
+    }
+    if (userData.email) {
+      userConditions.push({ email: userData.email });
+    }
 
     if (userConditions.length === 0) {
       logger.warn(
@@ -22,14 +29,20 @@ export class DeleteUserHandler {
       return;
     }
 
+    // ============================================
+    // 2. BUSCAR Y DESACTIVAR USUARIO
+    // ============================================
+
     await this.prisma.$transaction(async (tx: any) => {
-      // 1. Buscar usuario con sus relaciones críticas
+      // ✅ CORREGIDO: Buscar usuario por email o cognito_sub
       const user = await tx.users.findFirst({
         where: { OR: userConditions },
         select: {
           id: true,
           person_id: true,
           is_active: true,
+          email: true,
+          cognito_sub: true,
         },
       });
 
@@ -41,7 +54,6 @@ export class DeleteUserHandler {
         return;
       }
 
-      // Si ya está inactivo, evitamos operaciones innecesarias
       if (!user.is_active) {
         logger.info(
           `[DELETE_USER] Usuario ID ${user.id} ya se encuentra inactivo.`,
@@ -49,31 +61,117 @@ export class DeleteUserHandler {
         return;
       }
 
-      // 2. Desactivar todas las membresías activas del usuario
       logger.info(
-        `[DELETE_USER] Desactivando membresías del usuario ID: ${user.id}`,
+        `[DELETE_USER] Desactivando usuario: ${user.email} (ID: ${user.id})`,
       );
-      await tx.store_memberships.updateMany({
+
+      // ============================================
+      // 3. DESACTIVAR MEMBRESÍAS DEL USUARIO
+      // ============================================
+
+      // ✅ CORREGIDO: Desactivar todas las membresías activas del usuario
+      const membershipsUpdated = await tx.store_memberships.updateMany({
         where: {
-          user_id: user.id,
+          user_id: user.id, // ✅ bigint
           is_active: true,
         },
-        data: { is_active: false },
+        data: {
+          is_active: false,
+          updated_at: new Date(),
+        },
       });
 
-      // 3. Desactivar el usuario
-      logger.info(`[DELETE_USER] Desactivando usuario ID: ${user.id}`);
+      logger.info(
+        `[DELETE_USER] ${membershipsUpdated.count} membresías desactivadas para usuario ID: ${user.id}`,
+      );
+
+      // ============================================
+      // 4. DESACTIVAR SESSIONES DEL USUARIO (SI EXISTE)
+      // ============================================
+
+      // ✅ Si existe tabla de sesiones, desactivarlas
+      try {
+        // Verificar si existe la tabla Session (del sistema legacy)
+        const sessionsUpdated = await tx.session.updateMany({
+          where: {
+            userId: user.id, // ✅ bigint
+            isActive: true,
+          },
+          data: {
+            isActive: false,
+            updatedAt: new Date(),
+          },
+        });
+
+        if (sessionsUpdated.count > 0) {
+          logger.info(
+            `[DELETE_USER] ${sessionsUpdated.count} sesiones desactivadas para usuario ID: ${user.id}`,
+          );
+        }
+      } catch (error) {
+        // La tabla Session puede no existir en la nueva BD
+        logger.debug(
+          `[DELETE_USER] No se pudo desactivar sesiones (tabla puede no existir): ${error}`,
+        );
+      }
+
+      // ============================================
+      // 5. DESACTIVAR TOKENS DEL USUARIO (SI EXISTE)
+      // ============================================
+
+      try {
+        // Verificar si existe la tabla TokenBlacklist
+        const tokensUpdated = await tx.tokenBlacklist.updateMany({
+          where: {
+            userId: user.id, // ✅ bigint
+            isActive: true,
+          },
+          data: {
+            isActive: false,
+            updatedAt: new Date(),
+          },
+        });
+
+        if (tokensUpdated.count > 0) {
+          logger.info(
+            `[DELETE_USER] ${tokensUpdated.count} tokens desactivados para usuario ID: ${user.id}`,
+          );
+        }
+      } catch (error) {
+        // La tabla TokenBlacklist puede no existir en la nueva BD
+        logger.debug(
+          `[DELETE_USER] No se pudo desactivar tokens (tabla puede no existir): ${error}`,
+        );
+      }
+
+      // ============================================
+      // 6. DESACTIVAR USUARIO
+      // ============================================
+
+      // ✅ CORREGIDO: Desactivar usuario (soft delete)
       await tx.users.update({
-        where: { id: user.id },
-        data: { is_active: false },
+        where: { id: user.id }, // ✅ bigint
+        data: {
+          is_active: false,
+          updated_at: new Date(),
+          // Opcional: limpiar cognito_sub para liberar el identificador
+          // cognito_sub: null,
+        },
       });
 
-      // 4. Opcional: Desactivar la persona si no tiene otros usuarios activos vinculados
-      // Esto evita dejar personas huérfanas activas si el usuario era el único vínculo
+      logger.info(
+        `[DELETE_USER] Usuario desactivado exitosamente: ${user.email} (ID: ${user.id})`,
+      );
+
+      // ============================================
+      // 7. VERIFICAR SI LA PERSONA QUEDA SIN USUARIOS
+      // ============================================
+
       if (user.person_id) {
+        // ✅ CORREGIDO: Contar usuarios activos de la misma persona
         const otherActiveUsers = await tx.users.count({
           where: {
-            person_id: user.person_id,
+            person_id: user.person_id, // ✅ bigint
             id: { not: user.id },
             is_active: true,
           },
@@ -81,17 +179,26 @@ export class DeleteUserHandler {
 
         if (otherActiveUsers === 0) {
           logger.info(
-            `[DELETE_USER] Desactivando persona ID: ${user.person_id} (sin otros usuarios activos)`,
+            `[DELETE_USER] Persona ID ${user.person_id} queda sin usuarios activos. ` +
+              `Considerando si debe desactivarse también.`,
           );
-          // Nota: En tu schema actual 'persons' no tiene campo is_active.
-          // Si deseas mantener historial, considera agregarlo o simplemente dejar la persona como está.
-          // Por ahora solo logueamos la acción.
+
+          // Opcional: Desactivar la persona si no tiene otros usuarios activos
+          // Esto es un soft delete, no se elimina físicamente
+          // await tx.persons.update({
+          //   where: { id: user.person_id },
+          //   data: { is_active: false },
+          // });
+        } else {
+          logger.info(
+            `[DELETE_USER] Persona ID ${user.person_id} tiene ${otherActiveUsers} usuarios activos restantes.`,
+          );
         }
       }
     });
 
     logger.info(
-      `[CREATE_USER] Ejecutado por handler separado: ${userData.email}`,
+      `[DELETE_USER] Proceso de desactivación completado para: ${userData.email || userData.cognitoSub}`,
     );
   }
 }

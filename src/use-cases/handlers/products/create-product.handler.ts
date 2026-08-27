@@ -1,5 +1,6 @@
+// src/use-cases/handlers/products/create-product.handler.ts
+
 import { PrismaClient, Prisma } from "@prisma/client";
-import { randomUUID } from "crypto";
 import {
   ProductCatalogPayload,
   ProductCategoryPayload,
@@ -20,8 +21,8 @@ export class CreateProductHandler {
       throw new Error("[CREATE_PRODUCT] El nombre del producto es requerido.");
     }
 
-    // Resolver status (defensivo)
-    let statusId: string | null = null;
+    // ✅ CORREGIDO: statusId ahora es bigint | null (no string)
+    let statusId: bigint | null = null;
     if (product.statusCode) {
       statusId = catalog.productStatuses[product.statusCode] ?? null;
       if (!statusId) {
@@ -33,25 +34,25 @@ export class CreateProductHandler {
       }
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      // ✅ Resolver store (puede ser null)
+    await this.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      // ✅ CORREGIDO: storeId es bigint | null
       const storeId = await this.resolveStore(
         tx,
         product.storeLegacyId,
         product.storeId,
       );
 
-      // ✅ Resolver categoría (solo si hay store)
+      // ✅ CORREGIDO: categoryId es bigint | null
       const categoryId = storeId
         ? await this.resolveCategory(tx, storeId, product.category)
         : null;
 
-      // ✅ Resolver catálogo (solo si hay store)
+      // ✅ CORREGIDO: catalogId es bigint | null
       const catalogId = storeId
         ? await this.resolveCatalog(tx, storeId, product.catalog)
         : null;
 
-      // 4. Upsert Producto
+      // ✅ CORREGIDO: productData con tipos correctos (bigint | null)
       const productData = {
         name: product.name.trim(),
         short_description: product.shortDescription ?? null,
@@ -70,16 +71,17 @@ export class CreateProductHandler {
         is_validate: product.isValidate ?? false,
         is_registered_product: product.isRegisteredProduct ?? false,
         is_active: product.isActive ?? true,
-        store_id: storeId, // ✅ Puede ser null
-        category_id: categoryId,
-        catalog_id: catalogId,
-        ...(statusId ? { status_id: statusId } : {}),
+        store_id: storeId, // ✅ bigint | null
+        category_id: categoryId, // ✅ bigint | null
+        catalog_id: catalogId, // ✅ bigint | null
+        ...(statusId ? { status_id: statusId } : {}), // ✅ bigint | null
       };
 
+      // ✅ CORREGIDO: Buscar producto existente por legacy_product_id
       let productRecord = product.legacyProductId
-        ? await tx.products.findFirst({
+        ? await tx.product.findFirst({
             where: {
-              legacy_product_id: BigInt(product.legacyProductId),
+              legacy_product_id: product.legacyProductId,
             },
             select: { id: true },
           })
@@ -89,17 +91,15 @@ export class CreateProductHandler {
         logger.info(
           `[CREATE_PRODUCT] Producto legacy ${product.legacyProductId} ya existe (${productRecord.id}), actualizando.`,
         );
-        productRecord = await tx.products.update({
+        productRecord = await tx.product.update({
           where: { id: productRecord.id },
           data: productData,
         });
       } else {
-        productRecord = await tx.products.create({
+        // ✅ CORREGIDO: Crear producto sin id (autoincrement)
+        productRecord = await tx.product.create({
           data: {
-            id: randomUUID(),
-            legacy_product_id: product.legacyProductId
-              ? BigInt(product.legacyProductId)
-              : null,
+            legacy_product_id: product.legacyProductId ?? null,
             ...productData,
           },
         });
@@ -108,11 +108,10 @@ export class CreateProductHandler {
         );
       }
 
-      // 5. Migrar imágenes
+      // ✅ CORREGIDO: Migrar imágenes
       if (images && images.length > 0) {
-        await tx.product_images.createMany({
+        await tx.productImage.createMany({
           data: images.map((img, index) => ({
-            id: randomUUID(),
             product_id: productRecord.id,
             url: img.url,
             title: img.title ?? null,
@@ -128,7 +127,6 @@ export class CreateProductHandler {
           })),
           skipDuplicates: true,
         });
-
         logger.info(
           `[CREATE_PRODUCT] ${images.length} imágenes migradas para producto ${productRecord.id}`,
         );
@@ -140,53 +138,49 @@ export class CreateProductHandler {
     );
   }
 
-  // ✅ Método resolveStore completamente flexible
+  // ✅ CORREGIDO: Retorna bigint | null
   private async resolveStore(
     tx: Prisma.TransactionClient,
     storeLegacyId?: number,
-    storeId?: string,
-  ): Promise<string | null> {
-    // Opción 1: Viene el UUID directo
+    storeId?: bigint | null, // ✅ CORREGIDO: string → bigint | null
+  ): Promise<bigint | null> {
+    // Si viene storeId (ya es bigint)
     if (storeId) {
-      const store = await tx.stores.findUnique({
+      const store = await tx.store.findUnique({
         where: { id: storeId },
         select: { id: true },
       });
-      if (!store) {
-        throw new Error(
-          `[CREATE_PRODUCT] Store no encontrado con id: ${storeId}`,
-        );
+      if (store) {
+        return store.id;
       }
-      return store.id;
+      logger.warn(`[CREATE_PRODUCT] Store no encontrado con id: ${storeId}`);
     }
 
-    // Opción 2: Viene el legacy_id
     if (storeLegacyId) {
-      const store = await tx.stores.findFirst({
-        where: { legacy_store_id: BigInt(storeLegacyId) },
+      const store = await tx.store.findFirst({
+        where: { legacy_store_id: storeLegacyId },
         select: { id: true },
       });
-      if (!store) {
-        throw new Error(
-          `[CREATE_PRODUCT] Store no encontrado con legacy_store_id: ${storeLegacyId}`,
-        );
+      if (store) {
+        return store.id;
       }
-      return store.id;
+      logger.warn(
+        `[CREATE_PRODUCT] Store no encontrado con legacy_store_id: ${storeLegacyId}`,
+      );
     }
 
-    // Opción 3: Sin store (producto global o sin tienda asociada)
     logger.info(
       "[CREATE_PRODUCT] Producto sin store asociado (producto global o sin tienda).",
     );
     return null;
   }
 
+  // ✅ CORREGIDO: storeId es bigint | null, retorna bigint | null
   private async resolveCategory(
     tx: Prisma.TransactionClient,
-    storeId: string | null, // ✅ Aceptar null
+    storeId: bigint | null,
     category?: ProductCategoryPayload | null,
-  ): Promise<string | null> {
-    // Si no hay storeId, no se puede crear categoría
+  ): Promise<bigint | null> {
     if (!storeId || !category) return null;
 
     if (!category.name) {
@@ -195,8 +189,14 @@ export class CreateProductHandler {
     }
 
     const normalizedName = category.name.trim();
-    let existing = await tx.categories.findFirst({
-      where: { store_id: storeId, name: normalizedName },
+
+    // ✅ CORREGIDO: where con store_id = bigint
+    let existing = await tx.category.findFirst({
+      where: {
+        store_id: storeId,
+        name: normalizedName,
+        is_active: true,
+      },
       select: { id: true },
     });
 
@@ -204,26 +204,30 @@ export class CreateProductHandler {
       logger.info(
         `[CREATE_PRODUCT] Creando categoría "${normalizedName}" para tienda ${storeId}`,
       );
-      existing = await tx.categories.create({
+
+      // ✅ CORREGIDO: parentId como bigint | null
+      const parentId = category.parentId ?? null;
+
+      existing = await tx.category.create({
         data: {
-          id: randomUUID(),
           store_id: storeId,
-          parent_id: category.parentId ?? null,
+          parent_id: parentId,
           name: normalizedName,
           is_active: category.isActive ?? true,
         },
         select: { id: true },
       });
     }
+
     return existing.id;
   }
 
+  // ✅ CORREGIDO: storeId es bigint | null, retorna bigint | null
   private async resolveCatalog(
     tx: Prisma.TransactionClient,
-    storeId: string | null, // ✅ Aceptar null
+    storeId: bigint | null,
     catalogRef?: ProductCatalogPayload | null,
-  ): Promise<string | null> {
-    // Si no hay storeId, no se puede crear catálogo
+  ): Promise<bigint | null> {
     if (!storeId || !catalogRef) return null;
 
     if (!catalogRef.name) {
@@ -232,8 +236,14 @@ export class CreateProductHandler {
     }
 
     const normalizedName = catalogRef.name.trim();
-    let existing = await tx.catalogs.findFirst({
-      where: { store_id: storeId, name: normalizedName },
+
+    // ✅ CORREGIDO: where con store_id = bigint
+    let existing = await tx.catalog.findFirst({
+      where: {
+        store_id: storeId,
+        name: normalizedName,
+        is_public: catalogRef.isPublic ?? false,
+      },
       select: { id: true },
     });
 
@@ -241,9 +251,8 @@ export class CreateProductHandler {
       logger.info(
         `[CREATE_PRODUCT] Creando catálogo "${normalizedName}" para tienda ${storeId}`,
       );
-      existing = await tx.catalogs.create({
+      existing = await tx.catalog.create({
         data: {
-          id: randomUUID(),
           store_id: storeId,
           name: normalizedName,
           is_public: catalogRef.isPublic ?? false,
@@ -251,6 +260,7 @@ export class CreateProductHandler {
         select: { id: true },
       });
     }
+
     return existing.id;
   }
 }

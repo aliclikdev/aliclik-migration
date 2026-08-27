@@ -1,23 +1,34 @@
 {
-  "eventId": "evt-update-20260814",
+  "eventId": "test-event-update-user-001",
   "eventType": "UPDATE_USER",
-  "timestamp": "2026-08-14T11:15:00.000Z",
+  "timestamp": "2026-08-27T16:00:00.000Z",
   "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "replyToQueueUrl": "https://sqs.us-east-1.amazonaws.com/123456789012/user-response-queue",
   "person": {
     "firstName": "Juan Carlos",
-    "lastName": "Pérez Rodríguez Actualizado",
-    "documentNumber": "70123456",
-    "address": "Calle Las Flores 456, Miraflores, Lima"
+    "lastName": "Perez Gomez",
+    "documentNumber": "87654321",
+    "address": "Calle Nueva 456",
+    "birthDate": "1990-01-01"
   },
   "user": {
     "email": "juan.perez@example.com",
-    "cognitoSub": "sub-uuid-juan-perez-001",
+    "cognitoSub": "cognito-sub-123",
     "isActive": true
   },
-  "membership": {
-    "storeLegacyId": 65921,
-    "role": "SELLER",
-    "isOwnerStore": false,
-    "isActive": true
+  "store": {
+    "id": 1001,
+    "legacyStoreId": 1001,
+    "name": "Tienda de Prueba",
+    "isActive": true,
+    "settings": {
+      "supportPhone": "999888777",
+      "supportEmail": "soporte@prueba.com"
+    },
+    "membership": {
+      "roleName": "ADMIN_STORE",
+      "isOwner": true,
+      "isActive": true
+    }
   }
 }
