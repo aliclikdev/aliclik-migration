@@ -1,13 +1,14 @@
 service: aliclik-migration
-
 frameworkVersion: '3'
-
 useDotenv: true
+
+custom:
+  region: ${env:AWS_REGION, 'us-east-1'}
 
 provider:
   name: aws
   runtime: nodejs20.x
-  region: ${env:AWS_REGION, 'us-east-1'}
+  region: us-east-1                    # ← string literal (evita warning)
   stage: ${opt:stage, 'dev'}
   timeout: 30
   memorySize: 512
@@ -19,7 +20,8 @@ provider:
     LOG_LEVEL: ${env:LOG_LEVEL, 'info'}
     SQS_QUEUE_URL: ${env:SQS_QUEUE_URL}
     SQS_DLQ_URL: ${env:SQS_DLQ_URL}
-
+    AWS_S3_BUCKET: ${env:AWS_S3_BUCKET, 'product-aliclik'}
+    STAGING_PREFIX: 'staging/'
   iam:
     role:
       statements:
@@ -28,42 +30,77 @@ provider:
             - sqs:ReceiveMessage
             - sqs:DeleteMessage
             - sqs:GetQueueAttributes
-            - sqs:SendMessage
+            - sqs:ChangeMessageVisibility
           Resource:
-            - ${env:SQS_QUEUE_ARN}
-            - ${env:SQS_DLQ_ARN}
-
-plugins:
-  - serverless-esbuild
-  - serverless-offline
-  - serverless-dotenv-plugin
-
-custom:
-  esbuild:
-    bundle: true
-    minify: false
-    sourcemap: true
-    target: node20
-    packager: pnpm
-
-package:
-  individually: false
-  patterns:
-    - 'libquery_engine-rhel-openssl-3.0.x.so.node'
-    - 'prisma/schema.prisma'
+            - Fn::GetAtt:              # ← sintaxis larga
+                - ImageMigrationQueue
+                - Arn
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+          Resource:
+            - Fn::Join:                # ← sintaxis larga para arn
+                - ''
+                - - 'arn:aws:s3:::'
+                  - ${env:AWS_S3_BUCKET, 'product-aliclik'}
+                  - '/*'
 
 functions:
   processSqsMigration:
-    handler: src/handlers/processSqsMigration.handler
-    vpc:
-      securityGroupIds:
-        - ${env:AURORA_SECURITY_GROUP_ID}
-      subnetIds:
-        - ${env:SUBNET_PRIVATE_1}
-        - ${env:SUBNET_PRIVATE_2}
+    handler: dist/handlers/processSqsMigration.handler
     events:
       - sqs:
-          arn: ${env:SQS_QUEUE_ARN}
-          batchSize: 10
-          maximumBatchingWindow: 60
+          arn:
+            Fn::GetAtt:
+              - MigrationQueue
+              - Arn
+          batchSize: 5
           functionResponseType: ReportBatchItemFailures
+
+  processImageMigration:
+    handler: dist/handlers/processImageMigration.handler
+    timeout: 120
+    memorySize: 1024
+    environment:
+      AWS_S3_BUCKET: ${env:AWS_S3_BUCKET, 'product-aliclik'}
+      AWS_REGION: us-east-1
+      STAGING_PREFIX: 'staging/'
+      AURORA_DATABASE_URL: ${env:AURORA_DATABASE_URL}
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - ImageMigrationQueue
+              - Arn
+          batchSize: 3
+          functionResponseType: ReportBatchItemFailures
+
+resources:
+  Resources:
+    ImageMigrationQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-image-migration
+        VisibilityTimeout: 180
+        MessageRetentionPeriod: 1209600
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt:
+              - ImageMigrationDLQ
+              - Arn
+          maxReceiveCount: 3
+
+    ImageMigrationDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-image-migration-dlq
+        MessageRetentionPeriod: 1209600
+
+  Outputs:
+    ImageMigrationQueueUrl:
+      Value:
+        Ref: ImageMigrationQueue       # ← sintaxis larga
+      Export:
+        Name: ${self:service}-${self:provider.stage}-image-migration-queue-url

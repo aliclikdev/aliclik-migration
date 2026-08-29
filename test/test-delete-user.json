@@ -1,0 +1,25 @@
+{
+  "eventId": "test-event-delete-user-001",
+  "eventType": "DELETE_USER",
+  "timestamp": "2026-08-27T16:00:00.000Z",
+  "sourceSystem": "ALICLIK_LEGACY_HEROKU",
+  "replyToQueueUrl": "https://sqs.us-east-1.amazonaws.com/123456789012/user-response-queue",
+  "person": {
+    "legacyPersonId": 12345,
+    "firstName": "Juan",
+    "lastName": "Perez",
+    "documentType": "DNI",
+    "documentNumber": "12345678"
+  },
+  "user": {
+    "email": "juan.perez@example.com",
+    "cognitoSub": "cognito-sub-123",
+    "isActive": false
+  },
+  "store": {
+    "id": 1001,
+    "legacyStoreId": 1001,
+    "name": "Tienda de Prueba",
+    "isActive": true
+  }
+}

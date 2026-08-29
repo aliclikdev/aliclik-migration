@@ -9,6 +9,8 @@
     "deploy": "serverless deploy",
     "deploy:prod": "serverless deploy --stage prod",
     "deploy:dev": "serverless deploy --stage dev",
+    "remove:dev": "serverless remove --stage dev",
+    "remove:prod": "serverless remove --stage prod",
     "dev": "serverless offline",
     "test": "echo \"Error: no test specified\" && exit 1",
     "prisma:generate": "prisma generate",
@@ -44,6 +46,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@aws-sdk/client-sqs": "^3.1111.0",
     "@prisma/client": "^5.22.0",
     "uuid": "^14.0.1"
   }

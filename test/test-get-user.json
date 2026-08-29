@@ -1,6 +1,6 @@
 {
-  "eventId": "test-event-create-user-001",
-  "eventType": "CREATE_USER",
+  "eventId": "test-event-get-user-001",
+  "eventType": "GET_USER",
   "timestamp": "2026-08-27T16:00:00.000Z",
   "sourceSystem": "ALICLIK_LEGACY_HEROKU",
   "replyToQueueUrl": "https://sqs.us-east-1.amazonaws.com/123456789012/user-response-queue",
@@ -17,35 +17,18 @@
     "legacyUserId": 67890,
     "email": "juan.perez@example.com",
     "cognitoSub": "cognito-sub-123",
-    "isActive": true,
-    "lastLoginAt": "2026-08-27T15:00:00.000Z"
+    "isActive": true
   },
   "store": {
     "id": 1001,
-    "name": "Tienda de Prueba",
     "legacyStoreId": 1001,
-    "businessName": "Prueba SAC",
-    "ruc": "12345678901",
+    "name": "Tienda de Prueba",
     "isActive": true,
-    "settings": {
-      "currencyCode": "PEN",
-      "timezone": "America/Lima",
-      "supportPhone": "999888777",
-      "supportEmail": "soporte@prueba.com",
-      "isEmailTransferVerified": true,
-      "accountVerified": true
-    },
     "membership": {
       "roleId": 1,
       "roleName": "ADMIN_STORE",
       "isOwner": true,
       "isActive": true
     }
-  },
-  "termsAcceptance": {
-    "termsId": 1,
-    "version": 1,
-    "ipAddress": "192.168.1.100",
-    "userAgent": "Mozilla/5.0"
   }
 }

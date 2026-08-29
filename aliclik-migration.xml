@@ -200,7 +200,7 @@ model StoreMembership {
 
 model Idempotency {
   id          BigInt   @id @default(autoincrement())
-  key         String   @unique @db.VarChar(255)
+  idempotency_key         String   @unique @db.VarChar(255)
   status      String   @default("PROCESSED") @db.VarChar(30)
   processedAt DateTime @default(now()) @map("processed_at")
   metadata    Json?
@@ -310,7 +310,7 @@ export async function acquireSqsMigrationLock(eventId: string): Promise<boolean>
   try {
     await db.idempotency.create({
       data: {
-        key: lockKey,
+        idempotency_key: lockKey,
         status: 'LOCKED',
       },
     });

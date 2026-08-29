@@ -44,3 +44,8 @@ coverage/
 
 # AWS
 .aws-sam/
+.claude
+
+firebase-adminsdk.json
+*.json
+!package.json
