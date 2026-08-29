@@ -4,6 +4,24 @@ useDotenv: true
 
 custom:
   region: ${env:AWS_REGION, 'us-east-1'}
+  esbuild:
+    bundle: true
+    minify: false
+    target: 'node20'
+    platform: 'node'
+    sourcemap: false
+    external:
+      - '@prisma/client'  # Prisma debe ser externo
+      - 'sharp'           # Sharp debe ser externo (binario nativo)
+    packager: 'pnpm'
+    packagerOptions:
+      scripts:
+        - prisma generate
+    exclude:
+      - '!node_modules/.pnpm/**'  # Excluir estructura anidada de pnpm
+
+package:
+  individually: true  # ← Empaquetar cada función por separado
 
 provider:
   name: aws
@@ -104,3 +122,4 @@ resources:
         Ref: ImageMigrationQueue       # ← sintaxis larga
       Export:
         Name: ${self:service}-${self:provider.stage}-image-migration-queue-url
+

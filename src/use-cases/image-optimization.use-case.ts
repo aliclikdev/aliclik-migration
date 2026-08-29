@@ -47,6 +47,9 @@ export class ImageOptimizationUseCase {
         image.stagingS3Key,
       );
       if (!buffer) {
+        logger.error(
+          `[IMAGE_OPTIMIZATION] No se pudo descargar ${image.stagingS3Key}`,
+        );
         return {
           success: false,
           error: `No se pudo descargar ${image.stagingS3Key}`,
@@ -63,8 +66,8 @@ export class ImageOptimizationUseCase {
       let finalContentType: string;
 
       if (isAlreadyWebp) {
-        // Ya es WebP, solo strip metadata sin reprocesar
-        optimizedBuffer = await sharp(buffer).strip().toBuffer();
+        // Ya es WebP, solo eliminar metadatos sin reprocesar
+        optimizedBuffer = await sharp(buffer).toBuffer();
         finalExt = ".webp";
         finalContentType = "image/webp";
       } else {
@@ -72,7 +75,6 @@ export class ImageOptimizationUseCase {
         optimizedBuffer = await sharp(buffer)
           .rotate() // auto-rotar según EXIF
           .webp({ quality: WEBP_QUALITY, effort: 4 })
-          .strip() // eliminar EXIF/metadata
           .toBuffer();
         finalExt = ".webp";
         finalContentType = "image/webp";
@@ -90,6 +92,9 @@ export class ImageOptimizationUseCase {
         finalContentType,
       );
       if (!uploaded) {
+        logger.error(
+          `[IMAGE_OPTIMIZATION] Error subiendo a S3. key=${finalKey}`,
+        );
         return {
           success: false,
           error: "Error subiendo imagen optimizada a S3",
@@ -103,11 +108,9 @@ export class ImageOptimizationUseCase {
       const newUrl = `${S3_PUBLIC_BASE}/${finalKey}`;
       const updated = await this.updateLegacyDb(image, newUrl);
       if (!updated) {
-        logger.warn({
-          msg: "Imagen optimizada en S3 pero no se pudo actualizar BD",
-          finalKey,
-          entityId: image.entityId,
-        });
+        logger.warn(
+          `[IMAGE_OPTIMIZATION] Imagen en S3 pero no se pudo actualizar BD. finalKey=${finalKey}, entityId=${image.entityId}`,
+        );
         return {
           success: false,
           s3Key: finalKey,
@@ -121,14 +124,11 @@ export class ImageOptimizationUseCase {
         (1 - optimizedSize / originalSize) * 100,
       );
 
-      logger.info({
-        msg: "Imagen optimizada exitosamente",
-        entityId: image.entityId,
-        originalSize,
-        optimizedSize,
-        savingsPercent,
-        finalKey,
-      });
+      logger.info(
+        `[IMAGE_OPTIMIZATION] Imagen optimizada exitosamente. ` +
+          `entityId=${image.entityId}, originalSize=${originalSize}, ` +
+          `optimizedSize=${optimizedSize}, savings=${savingsPercent}%, finalKey=${finalKey}`,
+      );
 
       return {
         success: true,
@@ -139,11 +139,10 @@ export class ImageOptimizationUseCase {
         savingsPercent,
       };
     } catch (e) {
-      logger.error({
-        msg: "Error inesperado optimizando imagen",
-        entityId: image.entityId,
-        error: (e as Error).message,
-      });
+      logger.error(
+        `[IMAGE_OPTIMIZATION] Error inesperado optimizando imagen. ` +
+          `entityId=${image.entityId}, error=${(e as Error).message}`,
+      );
       return { success: false, error: (e as Error).message };
     }
   }
@@ -158,18 +157,18 @@ export class ImageOptimizationUseCase {
         new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
       );
       const stream = res.Body as NodeJS.ReadableStream;
-      const chunks: Uint8Array[] = [];
-      for await (const chunk of stream) chunks.push(chunk);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk as Buffer);
+      }
       return {
         buffer: Buffer.concat(chunks),
         contentType: res.ContentType || null,
       };
     } catch (e) {
-      logger.error({
-        msg: "Error descargando de staging",
-        key,
-        error: (e as Error).message,
-      });
+      logger.error(
+        `[IMAGE_OPTIMIZATION] Error descargando de staging. key=${key}, error=${(e as Error).message}`,
+      );
       return { buffer: null, contentType: null };
     }
   }
@@ -191,11 +190,9 @@ export class ImageOptimizationUseCase {
       );
       return true;
     } catch (e) {
-      logger.error({
-        msg: "Error subiendo a S3",
-        key,
-        error: (e as Error).message,
-      });
+      logger.error(
+        `[IMAGE_OPTIMIZATION] Error subiendo a S3. key=${key}, error=${(e as Error).message}`,
+      );
       return false;
     }
   }
@@ -206,11 +203,9 @@ export class ImageOptimizationUseCase {
         new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }),
       );
     } catch (e) {
-      logger.warn({
-        msg: "No se pudo borrar del staging",
-        key,
-        error: (e as Error).message,
-      });
+      logger.warn(
+        `[IMAGE_OPTIMIZATION] No se pudo borrar del staging. key=${key}, error=${(e as Error).message}`,
+      );
     }
   }
 
@@ -230,11 +225,9 @@ export class ImageOptimizationUseCase {
       );
       return true;
     } catch (e) {
-      logger.error({
-        msg: "Error actualizando BD legacy",
-        entityId: image.entityId,
-        error: (e as Error).message,
-      });
+      logger.error(
+        `[IMAGE_OPTIMIZATION] Error actualizando BD legacy. entityId=${image.entityId}, error=${(e as Error).message}`,
+      );
       return false;
     }
   }

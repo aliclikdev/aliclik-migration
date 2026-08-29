@@ -10,7 +10,7 @@ import {
 } from "../types/sqs-migration.types";
 import { logger } from "../utils/logger";
 
-// Importar todos los handlers
+// Importar todos los handlerpps
 import { CreateUserHandler } from "./handlers/users/create-user.handler";
 import { UpdateUserHandler } from "./handlers/users/update-user.handler";
 import { DeleteUserHandler } from "./handlers/users/delete-user.handler";
