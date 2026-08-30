@@ -119,6 +119,7 @@ export class ImageOptimizationUseCase {
         };
       }
 
+      // aqui obtengo el tamaño de la imagen original
       const optimizedSize = optimizedBuffer.length;
       const savingsPercent = Math.round(
         (1 - optimizedSize / originalSize) * 100,
