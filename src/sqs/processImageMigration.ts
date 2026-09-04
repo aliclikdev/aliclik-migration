@@ -2,11 +2,11 @@
 
 import { SQSHandler, SQSBatchResponse } from "aws-lambda";
 import { PrismaClient } from "@prisma/client";
-import { ImageOptimizationUseCase } from "../../use-cases/image-optimization.use-case";
-import { IdempotencyService } from "../../services/idempotency.service";
-import { SqsReplyService } from "../../services/sqs-reply.service";
-import { ImageOptimizationMessage } from "../../types/image-optimization.types";
-import { logger } from "../../utils/logger";
+import { ImageOptimizationUseCase } from "../use-cases/image-optimization.use-case";
+import { IdempotencyService } from "../services/idempotency.service";
+import { SqsReplyService } from "../services/sqs-reply.service";
+import { ImageOptimizationMessage } from "../types/image-optimization.types";
+import { logger } from "../utils/logger";
 
 const prisma = new PrismaClient();
 const idempotencyService = new IdempotencyService(prisma); // 👈 Si tu constructor no pide prisma, quítalo

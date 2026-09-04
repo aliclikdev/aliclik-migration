@@ -2,43 +2,43 @@ service: aliclik-migration
 frameworkVersion: '3'
 useDotenv: true
 
+plugins:
+  - serverless-esbuild
+  - serverless-dotenv-plugin
+
 custom:
-  region: ${env:AWS_REGION, 'us-east-1'}
+  region: ${env:AWS_REGION}
+  dotenv:
+    path: .env
   esbuild:
     bundle: true
-    minify: false
+    minify: true
     target: 'node20'
     platform: 'node'
     sourcemap: false
     external:
-      - '@prisma/client'  # Prisma debe ser externo
-      - 'sharp'           # Sharp debe ser externo (binario nativo)
-    packager: 'pnpm'
-    packagerOptions:
-      scripts:
-        - prisma generate
-    exclude:
-      - '!node_modules/.pnpm/**'  # Excluir estructura anidada de pnpm
+      - '@aws-sdk/*'
+      - '@prisma/client'
+      - 'sharp'
+      - 'dotenv'
 
 package:
-  individually: true  # ← Empaquetar cada función por separado
+  individually: true
 
 provider:
   name: aws
   runtime: nodejs20.x
-  region: us-east-1                    # ← string literal (evita warning)
   stage: ${opt:stage, 'dev'}
   timeout: 30
   memorySize: 512
   environment:
     PRISMA_QUERY_ENGINE_LIBRARY: /var/task/libquery_engine-rhel-openssl-3.0.x.so.node
-    DATABASE_URL: ${env:DATABASE_URL, ''}
-    AURORA_DATABASE_URL: ${env:AURORA_DATABASE_URL, ''}
-    NODE_ENV: ${env:NODE_ENV, 'development'}
-    LOG_LEVEL: ${env:LOG_LEVEL, 'info'}
+    AURORA_DATABASE_URL: ${env:AURORA_DATABASE_URL}
+    NODE_ENV: ${env:NODE_ENV}
+    LOG_LEVEL: ${env:LOG_LEVEL}
     SQS_QUEUE_URL: ${env:SQS_QUEUE_URL}
     SQS_DLQ_URL: ${env:SQS_DLQ_URL}
-    AWS_S3_BUCKET: ${env:AWS_S3_BUCKET, 'product-aliclik'}
+    AWS_S3_BUCKET: ${env:AWS_S3_BUCKET}
     STAGING_PREFIX: 'staging/'
   iam:
     role:
@@ -50,7 +50,7 @@ provider:
             - sqs:GetQueueAttributes
             - sqs:ChangeMessageVisibility
           Resource:
-            - Fn::GetAtt:              # ← sintaxis larga
+            - Fn::GetAtt:
                 - ImageMigrationQueue
                 - Arn
         - Effect: Allow
@@ -59,31 +59,27 @@ provider:
             - s3:PutObject
             - s3:DeleteObject
           Resource:
-            - Fn::Join:                # ← sintaxis larga para arn
+            - Fn::Join:
                 - ''
                 - - 'arn:aws:s3:::'
-                  - ${env:AWS_S3_BUCKET, 'product-aliclik'}
+                  - ${env:AWS_S3_BUCKET}
                   - '/*'
 
 functions:
   processSqsMigration:
-    handler: dist/handlers/processSqsMigration.handler
+    handler: src/sqs/processSqsMigration.handler
     events:
       - sqs:
-          arn:
-            Fn::GetAtt:
-              - MigrationQueue
-              - Arn
+          arn: ${env:SQS_QUEUE_ARN}
           batchSize: 5
           functionResponseType: ReportBatchItemFailures
 
   processImageMigration:
-    handler: dist/handlers/processImageMigration.handler
+    handler: src/sqs/processImageMigration.handler
     timeout: 120
     memorySize: 1024
     environment:
-      AWS_S3_BUCKET: ${env:AWS_S3_BUCKET, 'product-aliclik'}
-      AWS_REGION: us-east-1
+      AWS_S3_BUCKET: ${env:AWS_S3_BUCKET}
       STAGING_PREFIX: 'staging/'
       AURORA_DATABASE_URL: ${env:AURORA_DATABASE_URL}
     events:
@@ -119,7 +115,6 @@ resources:
   Outputs:
     ImageMigrationQueueUrl:
       Value:
-        Ref: ImageMigrationQueue       # ← sintaxis larga
+        Ref: ImageMigrationQueue
       Export:
         Name: ${self:service}-${self:provider.stage}-image-migration-queue-url
-
